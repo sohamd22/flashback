@@ -1,21 +1,39 @@
 import modal
 import os
 import uuid
+import logging
+from datetime import datetime
 
-import boto3
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from pinecone import Pinecone
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+
+from services.storage import StorageService
+from services.vector_db import VectorDBService
+from services.video_processor import VideoProcessor
+from models.schemas import (
+    ProcessVideoResponse,
+    RetrieveClipsRequest,
+    RetrieveClipsResponse,
+    GetClipRequest,
+    GetClipResponse,
+    VideoChunkMetadata
+)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = modal.App("video-processing-api")
 
-# Minimal image with required dependencies
-image = modal.Image.debian_slim().pip_install(
-    "boto3",
-    "pinecone",
-    "fastapi",
-    "python-multipart",
+# Enhanced image with all required dependencies including ffmpeg
+image = (
+    modal.Image.debian_slim()
+    .apt_install("ffmpeg")
+    .pip_install(
+        "boto3",
+        "pinecone-client",
+        "fastapi",
+        "python-multipart",
+        "numpy",
+    )
 )
 
 # Secrets
@@ -26,94 +44,158 @@ gcs_secret = modal.Secret.from_name(
 
 pinecone_secret = modal.Secret.from_name(
     "pinecone-credentials",
-    required_keys=["PINECONE_HOST", "PINECONE_API_KEY"],
+    required_keys=["PINECONE_API_KEY"],
 )
-
-# Request/Response models
-class RetrieveClipsRequest(BaseModel):
-    user_id: str
-    query: str
-    top_k: int = 10
-
-class GetClipRequest(BaseModel):
-    user_id: str
-    clip_id: str
-
-# Constants
-BUCKET_NAME = "hack-bucket25"
 
 
 @app.function(
     image=image,
     secrets=[gcs_secret, pinecone_secret],
+    timeout=600,
 )
 @modal.asgi_app()
 def fastapi_app():
     web_app = FastAPI(title="Video Processing API")
 
-    # Initialize S3 client for GCS
-    s3_client = boto3.client(
-        's3',
-        endpoint_url='https://storage.googleapis.com',
-        aws_access_key_id=os.environ['GCP_ACCESS_KEY_ID'],
-        aws_secret_access_key=os.environ['GCP_ACCESS_KEY_SECRET'],
-        use_ssl=True,
+    # Initialize services
+    storage_service = StorageService(
+        access_key_id=os.environ['GCP_ACCESS_KEY_ID'],
+        access_key_secret=os.environ['GCP_ACCESS_KEY_SECRET']
     )
+    vector_db_service = VectorDBService(
+        api_key=os.environ['PINECONE_API_KEY']
+    )
+    video_processor = VideoProcessor()
 
-    # Initialize Pinecone
-    pc = Pinecone(api_key=os.environ['PINECONE_API_KEY'])
-
-    # Store clients for use in endpoints
-    web_app.state.s3_client = s3_client
-    web_app.state.pc = pc
-
-    @web_app.post("/process-video")
+    @web_app.post("/process-video", response_model=ProcessVideoResponse)
     async def process_video(
         user_id: str = Form(...),
         video: UploadFile = File(...)
     ):
-        """Process and store a video chunk"""
-        # Generate unique ID
-        chunk_id = str(uuid.uuid4())
+        """Process and store a video, splitting it into chunks"""
+        try:
+            # Read video data
+            video_data = await video.read()
+            logger.info(f"Processing video for user {user_id}, size: {len(video_data)} bytes")
 
-        # TODO: Upload video to GCS
-        # TODO: Extract embeddings
-        # TODO: Store in Pinecone
+            # Validate video
+            if not video_processor.validate_video(video_data):
+                raise HTTPException(status_code=400, detail="Invalid video file")
 
-        return JSONResponse(content={
-            "chunk_id": chunk_id,
-            "user_id": user_id,
-            "filename": video.filename,
-        })
+            # Generate video ID
+            video_id = str(uuid.uuid4())
 
-    @web_app.post("/retrieve-clips")
+            # Split video into chunks
+            chunks = video_processor.split_video(video_data, video_id)
+            chunk_ids = []
+
+            for chunk_id, chunk_data, chunk_index, start_time, end_time in chunks:
+                # Upload chunk to GCS
+                gcs_path = storage_service.upload_video_chunk(
+                    file_data=chunk_data,
+                    user_id=user_id,
+                    video_id=video_id,
+                    chunk_id=chunk_id,
+                    chunk_index=chunk_index
+                )
+
+                # Store metadata in Pinecone with hardcoded embedding
+                vector_db_service.upsert_video_chunk(
+                    chunk_id=chunk_id,
+                    user_id=user_id,
+                    video_id=video_id,
+                    chunk_index=chunk_index,
+                    gcs_path=gcs_path,
+                    start_time=start_time,
+                    end_time=end_time,
+                    text_description=f"Video {video.filename} chunk {chunk_index}"
+                )
+
+                chunk_ids.append(chunk_id)
+
+            # Calculate total duration
+            total_duration = chunks[-1][4] if chunks else 0
+
+            return ProcessVideoResponse(
+                video_id=video_id,
+                user_id=user_id,
+                chunk_ids=chunk_ids,
+                total_chunks=len(chunks),
+                duration_seconds=total_duration
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing video: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @web_app.post("/retrieve-clips", response_model=RetrieveClipsResponse)
     async def retrieve_clips(request: RetrieveClipsRequest):
         """Retrieve relevant clips for a query"""
-        # TODO: Generate query embedding
-        # TODO: Search Pinecone
+        try:
+            # Query Pinecone for relevant clips
+            clips = vector_db_service.query_clips(
+                query_text=request.query,
+                user_id=request.user_id,
+                top_k=request.top_k
+            )
 
-        return JSONResponse(content={
-            "user_id": request.user_id,
-            "query": request.query,
-            "clips": [],
-        })
+            return RetrieveClipsResponse(
+                user_id=request.user_id,
+                query=request.query,
+                clips=clips
+            )
 
-    @web_app.post("/get-clip")
+        except Exception as e:
+            logger.error(f"Error retrieving clips: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @web_app.post("/get-clip", response_model=GetClipResponse)
     async def get_clip(request: GetClipRequest):
-        """Get a specific clip by ID"""
-        # TODO: Fetch from GCS
-        # TODO: Generate presigned URL
+        """Get a specific clip by ID with presigned URL"""
+        try:
+            # Get chunk metadata from Pinecone
+            metadata = vector_db_service.get_chunk_metadata(request.clip_id)
 
-        return JSONResponse(content={
-            "user_id": request.user_id,
-            "clip_id": request.clip_id,
-            "url": None,
-        })
+            if metadata.get('user_id') != request.user_id:
+                raise HTTPException(status_code=403, detail="Access denied")
+
+            # Generate presigned URL
+            gcs_path = metadata.get('gcs_path')
+            if not gcs_path:
+                # Fallback: try to find the path
+                video_id = metadata.get('video_id')
+                gcs_path = storage_service.get_chunk_path(
+                    user_id=request.user_id,
+                    video_id=video_id,
+                    chunk_id=request.clip_id
+                )
+
+            url, expires_at = storage_service.generate_presigned_url(gcs_path)
+
+            return GetClipResponse(
+                user_id=request.user_id,
+                clip_id=request.clip_id,
+                url=url,
+                expires_at=expires_at
+            )
+
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            logger.error(f"Error getting clip: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     @web_app.get("/health")
     async def health_check():
         """Health check endpoint"""
-        return {"status": "healthy", "gcs": "connected", "pinecone": "connected"}
+        return {
+            "status": "healthy",
+            "services": {
+                "storage": "initialized",
+                "vector_db": "initialized",
+                "video_processor": "initialized"
+            }
+        }
 
     return web_app
 
