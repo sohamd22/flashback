@@ -49,8 +49,14 @@ class VectorDBService:
     ) -> List[Dict[str, Any]]:
         """Query for relevant video clips"""
         try:
+            embed_response = self.pc.inference.embed(
+                model="llama-text-embed-v2",
+                inputs=[{"text": query_text}],
+                parameters={"input_type": "query"},
+            )
+            vector = embed_response.data[0].values
             results = self.index.query(
-                vector=query_text,  # Text will be embedded by Pinecone
+                vector=vector,  # Text will be embedded by Pinecone
                 top_k=top_k,
                 namespace=user_id,  # Use user_id as namespace
                 include_metadata=True
@@ -58,11 +64,12 @@ class VectorDBService:
 
             clips = []
             for match in results.matches:
+                metadata = json.loads(match.metadata.get('metadata'))
                 clips.append({
                     'chunk_id': match.id,
                     'score': match.score,
-                    'user_id': match.metadata.get('user_id'),
-                    'video_id': match.metadata.get('video_id')
+                    'user_id': metadata.get('user_id'),
+                    'video_id': metadata.get('video_id')
                 })
 
             logger.info(f"Found {len(clips)} clips for query: {query_text}")
@@ -82,8 +89,8 @@ class VectorDBService:
             if chunk_id not in results.vectors:
                 raise ValueError(f"Chunk {chunk_id} not found")
 
-            vector_data = results.vectors[chunk_id]
-            return vector_data.metadata
+            vector_data = results.vectors[chunk_id].metadata
+            return vector_data
         except Exception as e:
             logger.error(f"Failed to get chunk metadata: {str(e)}")
             raise

@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 # Configuration
-API_URL = "https://jzflint--video-processing-api-fastapi-app.modal.run/process-video"
+API_URL = "https://jzflint--video-processing-api-fastapi-app.modal.run"
 VIDEO_PATH = Path(__file__).parent / "demo_vid.mov"
 USER_ID = "test-user-123"
 
@@ -15,7 +15,7 @@ def test_process_video():
         print(f"❌ Video file not found: {VIDEO_PATH}")
         sys.exit(1)
 
-    print(f"📹 Testing video processing endpoint...")
+    print("📹 Testing video processing endpoint...")
     print(f"   Video: {VIDEO_PATH.name}")
     print(f"   Size: {VIDEO_PATH.stat().st_size / 1024 / 1024:.2f} MB")
     print(f"   User ID: {USER_ID}")
@@ -29,7 +29,7 @@ def test_process_video():
             data = {'user_id': USER_ID}
 
             print("⏳ Uploading and processing video...")
-            response = requests.post(API_URL, files=files, data=data, timeout=120)
+            response = requests.post(API_URL + "/process-video", files=files, data=data, timeout=120)
 
         # Check response
         if response.status_code == 200:
@@ -63,7 +63,7 @@ def test_process_video():
 def test_retrieve_clips():
     """Test the retrieve-clips endpoint"""
     QUERY_TEXT = "test query"
-    response = requests.post(API_URL, json={"user_id": USER_ID, "query": QUERY_TEXT})
+    response = requests.post(API_URL + "/retrieve-clips", json={"user_id": USER_ID, "query": QUERY_TEXT})
 
     if response.status_code == 200:
         result = response.json()
@@ -71,10 +71,32 @@ def test_retrieve_clips():
         print("\n📊 Results:")
         print(f"   User ID: {result.get('user_id')}")
         print(f"   Query: {result.get('query')}")
-        print(f"   Clips: {result.get('clips')}")
+        print(f"   Total clips found: {len(result.get('clips', []))}")
+
+        clips = result.get('clips', [])
+        if clips:
+            print("\n🎬 Clips with presigned URLs:")
+            for i, clip in enumerate(clips[:3], 1):
+                print(f"\n   Clip {i}:")
+                print(f"     Chunk ID: {clip.get('chunk_id')}")
+                print(f"     Video ID: {clip.get('video_id')}")
+                print(f"     Score: {clip.get('score'):.4f}")
+                print(f"     URL: {clip.get('url')[:100]}..." if clip.get('url') else "     URL: None")
+                print(f"     Expires at: {clip.get('expires_at')}")
+            if len(clips) > 3:
+                print(f"\n   ... and {len(clips) - 3} more clips")
     else:
         print(f"❌ Failed with status code: {response.status_code}")
         print(f"   Response: {response.text}")
 
 if __name__ == "__main__":
-    test_process_video()
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Run video processing tests')
+    parser.add_argument('--test', choices=['process', 'retrieve', 'all'], required=True, help='Which test to run')
+    args = parser.parse_args()
+
+    if args.test == 'process' or args.test == 'all':
+        test_process_video()
+    if args.test == 'retrieve' or args.test == 'all':
+        test_retrieve_clips()

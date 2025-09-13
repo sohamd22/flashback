@@ -17,22 +17,19 @@ class RetrieveClipsRequest(BaseModel):
     top_k: int = 10
 
 
+class ClipWithUrl(BaseModel):
+    chunk_id: str
+    score: float
+    user_id: str
+    video_id: str
+    url: str
+    expires_at: datetime
+
+
 class RetrieveClipsResponse(BaseModel):
     user_id: str
     query: str
-    clips: List[dict]
-
-
-class GetClipRequest(BaseModel):
-    user_id: str
-    clip_id: str
-
-
-class GetClipResponse(BaseModel):
-    user_id: str
-    clip_id: str
-    url: str
-    expires_at: datetime
+    clips: List[ClipWithUrl]
 
 
 class VideoChunkMetadata(BaseModel):

@@ -13,9 +13,7 @@ from models.schemas import (
     ProcessVideoResponse,
     RetrieveClipsRequest,
     RetrieveClipsResponse,
-    GetClipRequest,
-    GetClipResponse,
-    VideoChunkMetadata
+    ClipWithUrl
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -132,7 +130,7 @@ def fastapi_app():
 
     @web_app.post("/retrieve-clips", response_model=RetrieveClipsResponse)
     async def retrieve_clips(request: RetrieveClipsRequest):
-        """Retrieve relevant clips for a query"""
+        """Retrieve relevant clips for a query with presigned URLs"""
         try:
             # Query Pinecone for relevant clips
             clips = vector_db_service.query_clips(
@@ -141,47 +139,36 @@ def fastapi_app():
                 top_k=request.top_k
             )
 
+            # Generate presigned URLs for each clip
+            clips_with_urls = []
+            for clip in clips:
+                # Reconstruct GCS path from metadata
+                logger.info(f"Getting chunk path for clip {clip['chunk_id'], clip['video_id'], request.user_id}")
+                gcs_path = storage_service.get_chunk_path(
+                    user_id=request.user_id,
+                    video_id=clip['video_id'],
+                    chunk_id=clip['chunk_id']
+                )
+
+                url, expires_at = storage_service.generate_presigned_url(gcs_path)
+
+                clips_with_urls.append(ClipWithUrl(
+                    chunk_id=clip['chunk_id'],
+                    score=clip['score'],
+                    user_id=clip['user_id'],
+                    video_id=clip['video_id'],
+                    url=url,
+                    expires_at=expires_at
+                ))
+
             return RetrieveClipsResponse(
                 user_id=request.user_id,
                 query=request.query,
-                clips=clips
+                clips=clips_with_urls
             )
 
         except Exception as e:
             logger.error(f"Error retrieving clips: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @web_app.post("/get-clip", response_model=GetClipResponse)
-    async def get_clip(request: GetClipRequest):
-        """Get a specific clip by ID with presigned URL"""
-        try:
-            # Get chunk metadata from Pinecone
-            metadata = vector_db_service.get_chunk_metadata(request.clip_id, request.user_id)
-
-            if metadata.get('user_id') != request.user_id:
-                raise HTTPException(status_code=403, detail="Access denied")
-
-            # Reconstruct GCS path from metadata
-            video_id = metadata.get('video_id')
-            gcs_path = storage_service.get_chunk_path(
-                user_id=request.user_id,
-                video_id=video_id,
-                chunk_id=request.clip_id
-            )
-
-            url, expires_at = storage_service.generate_presigned_url(gcs_path)
-
-            return GetClipResponse(
-                user_id=request.user_id,
-                clip_id=request.clip_id,
-                url=url,
-                expires_at=expires_at
-            )
-
-        except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
-        except Exception as e:
-            logger.error(f"Error getting clip: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
     @web_app.get("/health")
@@ -204,6 +191,5 @@ def main():
     print("Video Processing API skeleton deployed!")
     print("\nEndpoints:")
     print("  POST /process-video - Upload and process a video")
-    print("  POST /retrieve-clips - Search for clips")
-    print("  POST /get-clip - Get a specific clip")
+    print("  POST /retrieve-clips - Search for clips with presigned URLs")
     print("  GET /health - Health check")
