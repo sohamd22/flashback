@@ -29,11 +29,15 @@ image = (
     .apt_install("ffmpeg")
     .pip_install(
         "boto3",
-        "pinecone-client",
+        "requests",
+        "pinecone",
         "fastapi",
         "python-multipart",
         "numpy",
     )
+    .add_local_python_source("services")
+    .add_local_python_source("models")
+    .add_local_python_source("utils")
 )
 
 # Secrets
@@ -44,7 +48,7 @@ gcs_secret = modal.Secret.from_name(
 
 pinecone_secret = modal.Secret.from_name(
     "pinecone-credentials",
-    required_keys=["PINECONE_API_KEY"],
+    required_keys=["PINECONE_API_KEY", "PINECONE_HOST"],
 )
 
 
@@ -52,6 +56,7 @@ pinecone_secret = modal.Secret.from_name(
     image=image,
     secrets=[gcs_secret, pinecone_secret],
     timeout=600,
+    min_containers=1,
 )
 @modal.asgi_app()
 def fastapi_app():
@@ -63,7 +68,8 @@ def fastapi_app():
         access_key_secret=os.environ['GCP_ACCESS_KEY_SECRET']
     )
     vector_db_service = VectorDBService(
-        api_key=os.environ['PINECONE_API_KEY']
+        api_key=os.environ['PINECONE_API_KEY'],
+        index_host=os.environ['PINECONE_HOST']
     )
     video_processor = VideoProcessor()
 
@@ -91,7 +97,7 @@ def fastapi_app():
 
             for chunk_id, chunk_data, chunk_index, start_time, end_time in chunks:
                 # Upload chunk to GCS
-                gcs_path = storage_service.upload_video_chunk(
+                storage_service.upload_video_chunk(
                     file_data=chunk_data,
                     user_id=user_id,
                     video_id=video_id,
@@ -99,16 +105,12 @@ def fastapi_app():
                     chunk_index=chunk_index
                 )
 
-                # Store metadata in Pinecone with hardcoded embedding
+                # Store metadata in Pinecone with text embedding
                 vector_db_service.upsert_video_chunk(
                     chunk_id=chunk_id,
                     user_id=user_id,
                     video_id=video_id,
-                    chunk_index=chunk_index,
-                    gcs_path=gcs_path,
-                    start_time=start_time,
-                    end_time=end_time,
-                    text_description=f"Video {video.filename} chunk {chunk_index}"
+                    text=f"Video {video.filename} chunk {chunk_index}"  # Temporary text, will be VLM output later
                 )
 
                 chunk_ids.append(chunk_id)
@@ -154,21 +156,18 @@ def fastapi_app():
         """Get a specific clip by ID with presigned URL"""
         try:
             # Get chunk metadata from Pinecone
-            metadata = vector_db_service.get_chunk_metadata(request.clip_id)
+            metadata = vector_db_service.get_chunk_metadata(request.clip_id, request.user_id)
 
             if metadata.get('user_id') != request.user_id:
                 raise HTTPException(status_code=403, detail="Access denied")
 
-            # Generate presigned URL
-            gcs_path = metadata.get('gcs_path')
-            if not gcs_path:
-                # Fallback: try to find the path
-                video_id = metadata.get('video_id')
-                gcs_path = storage_service.get_chunk_path(
-                    user_id=request.user_id,
-                    video_id=video_id,
-                    chunk_id=request.clip_id
-                )
+            # Reconstruct GCS path from metadata
+            video_id = metadata.get('video_id')
+            gcs_path = storage_service.get_chunk_path(
+                user_id=request.user_id,
+                video_id=video_id,
+                chunk_id=request.clip_id
+            )
 
             url, expires_at = storage_service.generate_presigned_url(gcs_path)
 

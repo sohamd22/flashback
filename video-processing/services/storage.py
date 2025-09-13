@@ -1,4 +1,6 @@
 import boto3
+from botocore.config import Config
+import requests
 from datetime import datetime, timedelta
 from typing import BinaryIO
 import logging
@@ -18,7 +20,9 @@ class StorageService:
             endpoint_url=GCS_ENDPOINT_URL,
             aws_access_key_id=access_key_id,
             aws_secret_access_key=access_key_secret,
+            region_name='auto',
             use_ssl=True,
+            config=Config(signature_version='s3v4')
         )
         self.bucket_name = BUCKET_NAME
 
@@ -30,23 +34,29 @@ class StorageService:
         chunk_id: str,
         chunk_index: int
     ) -> str:
-        """Upload a video chunk to GCS"""
+        """Upload a video chunk to GCS using presigned URL"""
         key = f"{user_id}/{video_id}/{chunk_index:04d}_{chunk_id}.mp4"
 
         try:
-            self.s3_client.put_object(
-                Bucket=self.bucket_name,
-                Key=key,
-                Body=file_data,
-                ContentType='video/mp4',
-                Metadata={
-                    'user_id': user_id,
-                    'video_id': video_id,
-                    'chunk_id': chunk_id,
-                    'chunk_index': str(chunk_index),
-                    'uploaded_at': datetime.utcnow().isoformat()
-                }
+            # Generate presigned URL for upload
+            presigned_url = self.s3_client.generate_presigned_url(
+                'put_object',
+                Params={
+                    'Bucket': self.bucket_name,
+                    'Key': key
+                },
+                ExpiresIn=3600
             )
+
+            # Upload using the presigned URL
+            response = requests.put(
+                presigned_url,
+                data=file_data
+            )
+
+            if response.status_code != 200:
+                raise Exception(f"Upload failed with status {response.status_code}: {response.text}")
+
             logger.info(f"Uploaded chunk {chunk_id} to {key}")
             return key
         except Exception as e:
