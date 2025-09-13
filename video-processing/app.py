@@ -9,6 +9,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from services.storage import StorageService
 from services.vector_db import VectorDBService
 from services.video_processor import VideoProcessor
+from services.vlm_service import VLMService
 from models.schemas import (
     ProcessVideoResponse,
     RetrieveClipsRequest,
@@ -32,6 +33,7 @@ image = (
         "fastapi",
         "python-multipart",
         "numpy",
+        "anthropic",
     )
     .add_local_python_source("services")
     .add_local_python_source("models")
@@ -49,10 +51,14 @@ pinecone_secret = modal.Secret.from_name(
     required_keys=["PINECONE_API_KEY", "PINECONE_HOST"],
 )
 
+anthropic_secret = modal.Secret.from_name(
+    "anthropic-credentials",
+    required_keys=["ANTHROPIC_API_KEY"],
+)
 
 @app.function(
     image=image,
-    secrets=[gcs_secret, pinecone_secret],
+    secrets=[gcs_secret, pinecone_secret, anthropic_secret],
     timeout=600,
     min_containers=1,
 )
@@ -70,6 +76,9 @@ def fastapi_app():
         index_host=os.environ['PINECONE_HOST']
     )
     video_processor = VideoProcessor()
+    vlm_service = VLMService(
+        api_key=os.environ['ANTHROPIC_API_KEY']
+    )
 
     @web_app.post("/process-video", response_model=ProcessVideoResponse)
     async def process_video(
@@ -93,7 +102,18 @@ def fastapi_app():
             chunks = video_processor.split_video(video_data, video_id)
             chunk_ids = []
 
+            logger.info(f"Generating descriptions for {len(chunks)} chunks")
+
             for chunk_id, chunk_data, chunk_index, start_time, end_time in chunks:
+                # Generate natural language description for the chunk
+                description = vlm_service.generate_description(
+                    video_chunk_data=chunk_data,
+                    chunk_index=chunk_index,
+                    start_time=start_time,
+                    end_time=end_time,
+                    video_filename=video.filename
+                )
+
                 # Upload chunk to GCS
                 storage_service.upload_video_chunk(
                     file_data=chunk_data,
@@ -103,15 +123,16 @@ def fastapi_app():
                     chunk_index=chunk_index
                 )
 
-                # Store metadata in Pinecone with text embedding
+                # Store metadata in Pinecone with VLM-generated description
                 vector_db_service.upsert_video_chunk(
                     chunk_id=chunk_id,
                     user_id=user_id,
                     video_id=video_id,
-                    text=f"Video {video.filename} chunk {chunk_index}"  # Temporary text, will be VLM output later
+                    text=description
                 )
 
                 chunk_ids.append(chunk_id)
+                logger.info(f"Processed chunk {chunk_index + 1}/{len(chunks)}")
 
             # Calculate total duration
             total_duration = chunks[-1][4] if chunks else 0
