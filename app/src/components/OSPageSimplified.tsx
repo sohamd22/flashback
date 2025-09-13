@@ -118,9 +118,9 @@ function useWindowManager() {
 
 // App components
 function PersonalApp({ width, height }: { width: number; height: number }) {
-  const { user } = useAuth();
+  const { profile } = useAuth();
   
-  if (!user) {
+  if (!profile) {
     return (
       <div className="h-full flex items-center justify-center bg-black text-white">
         <div className="text-center" style={{ fontFamily: 'monospace' }}>
@@ -134,7 +134,7 @@ function PersonalApp({ width, height }: { width: number; height: number }) {
   return (
     <div className="h-full bg-black">
       <PersonalPage
-        user={user}
+        user={profile}
         onBack={() => {}}
         width={width}
         height={height}
@@ -144,9 +144,9 @@ function PersonalApp({ width, height }: { width: number; height: number }) {
 }
 
 function ContactsApp({ width, height }: { width: number; height: number }) {
-  const { user } = useAuth();
+  const { profile } = useAuth();
   
-  if (!user || !user.profilePhoto || !user.name) {
+  if (!profile || !profile.profile_photo || !profile.name) {
     return (
       <div className="h-full flex items-center justify-center bg-black text-white">
         <div className="text-center" style={{ fontFamily: 'monospace' }}>
@@ -157,7 +157,7 @@ function ContactsApp({ width, height }: { width: number; height: number }) {
     );
   }
 
-  const graphData = generateMockGraphData(user.profilePhoto, user.name, width, height);
+  const graphData = generateMockGraphData(profile.profile_photo, profile.name, width, height);
   
   return (
     <div className="h-full bg-black">
@@ -177,7 +177,7 @@ function ContactsApp({ width, height }: { width: number; height: number }) {
 // Main component
 export default function OSPage() {
   const [currentTime, setCurrentTime] = useState(new Date());
-  const { user, logout } = useAuth();
+  const { profile, logout } = useAuth();
   
   const windowManager = useWindowManager();
 
@@ -189,7 +189,7 @@ export default function OSPage() {
   const desktopIcons: DesktopIconData[] = [
     {
       id: 'personal',
-      name: user?.name ? `Videos` : 'My Memories',
+      name: profile?.name ? `Videos` : 'My Memories',
       icon: "/icons/folder.png",
       x: 32,
       y: 32,
@@ -197,7 +197,7 @@ export default function OSPage() {
         const windowWidth = typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200;
         const windowHeight = typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800;
         windowManager.openWindow(
-          user?.name ? `${user.name}'s Personal Space` : 'Personal Memories',
+          profile?.name ? `${profile.name}'s Personal Space` : 'Personal Memories',
           <PersonalApp width={windowWidth - 20} height={windowHeight - 60} />,
           "/icons/folder.png"
         );
@@ -255,7 +255,7 @@ export default function OSPage() {
         windows={windowManager.windows}
         currentTime={currentTime}
         onWindowClick={windowManager.bringToFront}
-        onLogout={user ? logout : undefined}
+        onLogout={profile ? logout : undefined}
       />
     </Desktop>
   );
