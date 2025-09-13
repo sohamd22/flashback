@@ -38,13 +38,6 @@ export const generateMockGraphData = (userPhoto: string, userName: string, canva
   // Generate other people nodes with Unsplash photos
   const peopleData = [
     {
-      id: '1',
-      name: 'Sarah Chen',
-      photo: 'https://images.unsplash.com/photo-1494790108755-2616b612b562?w=150&h=150&fit=crop&crop=face',
-      memories: Math.floor(Math.random() * 20) + 5, // 5-24 memories
-      isFriend: true
-    },
-    {
       id: '2', 
       name: 'Marcus Johnson',
       photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',

@@ -28,15 +28,25 @@ export default function Legend({
   };
 
   return (
-    <div className={`absolute ${positionClasses[position]} bg-black bg-opacity-95 text-white p-4 border border-gray-600 z-20 shadow-lg ${className}`}>
-      <h4 className="text-sm font-semibold mb-3 text-gray-200">{title}</h4>
-      <div className="space-y-2 text-xs">
+    <div 
+      className={`absolute ${positionClasses[position]} bg-gray-300 border-4 border-gray-800 text-black p-3 z-20 ${className}`}
+      style={{
+        boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.5), inset 2px 2px 0px rgba(255,255,255,0.8), 4px 4px 0px rgba(0,0,0,0.3)',
+        fontFamily: 'monospace',
+        fontSize: '11px'
+      }}
+    >
+      <h4 className="text-xs font-bold mb-2 text-black">{title}</h4>
+      <div className="space-y-1">
         {items.map((item, index) => (
-          <div key={index} className="flex items-center gap-3">
+          <div key={index} className="flex items-center gap-2">
             {item.color && (
               <div 
-                className="w-3 h-3 rounded-full flex-shrink-0"
-                style={{ backgroundColor: item.color }}
+                className="w-3 h-3 border border-gray-600 flex-shrink-0"
+                style={{ 
+                  backgroundColor: item.color,
+                  boxShadow: 'inset 1px 1px 0px rgba(0,0,0,0.2)'
+                }}
               />
             )}
             {item.icon && (
@@ -45,9 +55,9 @@ export default function Legend({
               </div>
             )}
             <div className="flex-1">
-              <span className="text-gray-300">{item.label}</span>
+              <span className="text-black font-bold">{item.label}</span>
               {item.description && (
-                <div className="text-gray-400 text-xs mt-0.5">{item.description}</div>
+                <div className="text-gray-700 text-xs">{item.description}</div>
               )}
             </div>
           </div>

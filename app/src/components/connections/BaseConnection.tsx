@@ -22,18 +22,22 @@ export default function BaseConnection({
   toX,
   toY,
   strength = 0.5,
-  color = 'rgba(156, 163, 175, 0.4)',
+  color = '#FFFFFF', // White color
   animated = true,
-  dashed = false,
+  dashed = true, // Always dashed for pixel art theme
   width,
   height,
   className = ''
 }: BaseConnectionProps) {
-  const thickness = connectionStyles.thickness.min + 
-    (strength * (connectionStyles.thickness.max - connectionStyles.thickness.min));
+  // Pixel art style thickness - discrete values
+  const thickness = Math.max(2, Math.floor(2 + (strength * 3))); // 2-5px, pixelated
   
   const opacity = connectionStyles.opacity.min + 
     (strength * (connectionStyles.opacity.max - connectionStyles.opacity.min));
+
+  // Grayscale glow based on similarity (min 0.5)
+  const glowIntensity = Math.max(0.5, strength);
+  const glowColor = `rgba(${Math.floor(255 * glowIntensity)}, ${Math.floor(255 * glowIntensity)}, ${Math.floor(255 * glowIntensity)}, 0.6)`;
 
   return (
     <svg
@@ -45,6 +49,7 @@ export default function BaseConnection({
         height,
         pointerEvents: 'none',
         zIndex: 1,
+        imageRendering: 'pixelated', // Pixel art rendering
       }}
       className={animated ? connectionStyles.animation.fade : ''}
     >
@@ -55,10 +60,13 @@ export default function BaseConnection({
         y2={toY}
         stroke={color}
         strokeWidth={thickness}
-        strokeLinecap="round"
+        strokeLinecap="square" // Pixel art style - square caps
         strokeOpacity={opacity}
-        strokeDasharray={dashed ? '5,5' : 'none'}
+        strokeDasharray={dashed ? '8,4' : 'none'} // Retro dashed pattern
         className={className}
+        style={{
+          filter: `drop-shadow(1px 1px 0px rgba(0,0,0,0.3)) drop-shadow(0 0 6px ${glowColor}) drop-shadow(0 0 12px ${glowColor})`, // Pixel art shadow + grayscale glow
+        }}
       />
     </svg>
   );

@@ -14,11 +14,22 @@ export default function GraphConnection({
   to,
   strength,
   canvasWidth,
-  canvasHeight
+  canvasHeight,
+  type = 'friendship'
 }: GraphConnectionProps) {
-  const thickness = 1 + (strength * 3);
-  const opacity = 0.2 + (strength * 0.5);
+  // Pixel art style thickness - discrete values
+  const thickness = Math.max(2, Math.floor(2 + (strength * 3))); // 2-5px, pixelated
+  const opacity = 0.3 + (strength * 0.4);
   
+  // Grayscale glow based on similarity (min 0.5)
+  const glowIntensity = Math.max(0.5, strength);
+  const glowColor = `rgba(${Math.floor(255 * glowIntensity)}, ${Math.floor(255 * glowIntensity)}, ${Math.floor(255 * glowIntensity)}, 0.6)`;
+  
+  // White color for all connection types
+  const getConnectionColor = () => {
+    return '#FFFFFF'; // White
+  };
+
   return (
     <svg
       style={{
@@ -29,6 +40,7 @@ export default function GraphConnection({
         height: canvasHeight,
         pointerEvents: 'none',
         zIndex: 1,
+        imageRendering: 'pixelated', // Pixel art rendering
       }}
     >
       <line
@@ -36,9 +48,14 @@ export default function GraphConnection({
         y1={from.y}
         x2={to.x}
         y2={to.y}
-        stroke={`rgba(156, 163, 175, ${opacity})`}
+        stroke={getConnectionColor()}
         strokeWidth={thickness}
-        strokeLinecap="round"
+        strokeLinecap="square" // Pixel art style - square caps
+        strokeOpacity={opacity}
+        strokeDasharray="4,10" // Always dashed for pixel art theme
+        style={{
+          filter: `drop-shadow(1px 1px 0px rgba(0,0,0,0.3)) drop-shadow(0 0 6px ${glowColor}) drop-shadow(0 0 12px ${glowColor})`, // Pixel art shadow + grayscale glow
+        }}
       />
     </svg>
   );

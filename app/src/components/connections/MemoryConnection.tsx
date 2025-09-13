@@ -13,12 +13,13 @@ export default function MemoryConnection({
   from,
   to,
   strength,
-  color = 'rgba(156, 163, 175, 0.6)',
+  color = '#FFFFFF', // White color
   canvasWidth,
   canvasHeight
 }: MemoryConnectionProps) {
-  const opacity = 0.2 + (strength * 0.5);
-  const thickness = 1 + (strength * 2);
+  // Pixel art style thickness - discrete values
+  const thickness = Math.max(2, Math.floor(2 + (strength * 3))); // 2-5px, pixelated
+  const opacity = 0.3 + (strength * 0.4);
   
   return (
     <svg
@@ -32,6 +33,7 @@ export default function MemoryConnection({
         zIndex: 1,
         opacity: 1,
         transition: 'opacity 0.4s ease-in-out',
+        imageRendering: 'pixelated', // Pixel art rendering
       }}
     >
       <line
@@ -41,10 +43,13 @@ export default function MemoryConnection({
         y2={to.y}
         stroke={color}
         strokeWidth={thickness}
-        strokeLinecap="round"
+        strokeLinecap="square" // Pixel art style - square caps
+        strokeOpacity={opacity}
+        strokeDasharray="8,4" // Always dashed for pixel art theme
         style={{
           opacity: opacity,
-          transition: 'stroke-dasharray 0.3s ease, stroke-dashoffset 0.3s ease'
+          transition: 'stroke-dasharray 0.3s ease, stroke-dashoffset 0.3s ease',
+          filter: 'drop-shadow(1px 1px 0px rgba(0,0,0,0.3)) drop-shadow(0 0 4px rgba(255,255,255,0.4))', // Pixel art shadow + glow
         }}
       />
     </svg>

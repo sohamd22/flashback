@@ -21,7 +21,14 @@ export default function Tooltip({
   };
 
   return (
-    <div className={`absolute ${positionClasses[position]} bg-black bg-opacity-95 text-white p-4 border border-gray-600 max-w-xs z-20 shadow-lg ${className}`}>
+    <div 
+      className={`absolute ${positionClasses[position]} bg-gray-300 border-4 border-gray-800 text-black p-3 max-w-xs z-20 ${className}`}
+      style={{
+        boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.5), inset 2px 2px 0px rgba(255,255,255,0.8), 4px 4px 0px rgba(0,0,0,0.3)',
+        fontFamily: 'monospace',
+        fontSize: '12px'
+      }}
+    >
       {children}
     </div>
   );

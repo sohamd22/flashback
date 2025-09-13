@@ -211,47 +211,29 @@ export default function GraphCanvas({ data, width, height, onUserClick, onFriend
       onMouseUp={handleMouseUp}
     >
       <div style={{ width, height }}>
-        <div className="absolute inset-0 opacity-10">
+        {/* Starry background */}
+        <div className="absolute inset-0 opacity-20">
           <div className="w-full h-full" style={{
             backgroundImage: `
-              linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
+              radial-gradient(2px 2px at 20px 30px, #eee, transparent),
+              radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.8), transparent),
+              radial-gradient(1px 1px at 90px 40px, #fff, transparent),
+              radial-gradient(1px 1px at 130px 80px, rgba(255,255,255,0.6), transparent),
+              radial-gradient(2px 2px at 160px 30px, #eee, transparent),
+              radial-gradient(1px 1px at 200px 60px, rgba(255,255,255,0.8), transparent),
+              radial-gradient(1px 1px at 250px 20px, #fff, transparent),
+              radial-gradient(2px 2px at 280px 90px, rgba(255,255,255,0.6), transparent),
+              radial-gradient(1px 1px at 320px 50px, #eee, transparent),
+              radial-gradient(1px 1px at 360px 10px, rgba(255,255,255,0.8), transparent)
             `,
-            backgroundSize: '40px 40px'
+            backgroundRepeat: 'repeat',
+            backgroundSize: '400px 100px'
           }} />
         </div>
 
         {data.connections.map(connection => renderConnection(connection))}
         
         {nodes.map(node => renderNode(node))}
-        
-        {hoveredNode && !dragState.isDragging && (
-          <Tooltip position="top-left">
-            {(() => {
-              const node = nodes.find(n => n.id === hoveredNode);
-              const userConnection = data.connections.find(c => 
-                (c.fromId === 'user' && c.toId === hoveredNode) ||
-                (c.fromId === hoveredNode && c.toId === 'user')
-              );
-              
-              return (
-                <div>
-                  <h3 className="font-semibold text-white text-lg">{node?.name}</h3>
-                  {userConnection && !node?.isUser && (
-                    <p className="text-sm text-gray-300 mt-1">
-                      {userConnection.mutualMemories} shared memories
-                    </p>
-                  )}
-                  {node?.isUser && (
-                    <p className="text-sm text-gray-300 mt-1">
-                      That's you! Click to view your memories →
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
-          </Tooltip>
-        )}
         
         <Legend
           title="Connection Strength"

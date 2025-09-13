@@ -188,7 +188,7 @@ export const positionVideosForSearch = (
   
   // If no search query, create floating star galaxy pattern
   if (!query.trim()) {
-    const maxRadius = Math.min(canvasWidth, canvasHeight) * 0.45;
+    const maxRadius = Math.min(canvasWidth, canvasHeight) * 0.7;
     const minRadius = 100;
     
     return {

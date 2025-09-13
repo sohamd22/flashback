@@ -16,7 +16,11 @@ export default function PageLayout({
   className = ''
 }: PageLayoutProps) {
   return (
-    <div className={`min-h-screen bg-black text-white flex flex-col ${className}`}>
+    <div className={`min-h-screen bg-black text-white flex flex-col ${className}`} style={{
+      background: 'linear-gradient(45deg, #1a1a2e 25%, #16213e 25%, #16213e 50%, #1a1a2e 50%, #1a1a2e 75%, #16213e 75%), linear-gradient(-45deg, #1a1a2e 25%, #16213e 25%, #16213e 50%, #1a1a2e 50%, #1a1a2e 75%, #16213e 75%)',
+      backgroundSize: '20px 20px',
+      backgroundPosition: '0 0, 10px 10px'
+    }}>
       {header && (
         <div className="flex-shrink-0">
           {header}
