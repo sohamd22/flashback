@@ -1,11 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { login, signup } from '@/lib/auth';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 interface AuthFormProps {
-  onSuccess: () => void;
+  onSuccess?: () => void;
 }
 
 export default function AuthForm({ onSuccess }: AuthFormProps) {
@@ -16,7 +16,8 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const { updateAuthUser, refreshAuth } = useAuth();
+  const { login, signup } = useAuth();
+  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,27 +43,23 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
     }
 
     try {
-      const user = isSignup
+      const result = isSignup
         ? await signup(email, password)
         : await login(email, password);
 
-      updateAuthUser(user);
-      await refreshAuth(); // Refresh to get the full session
-      onSuccess();
-    } catch (err: any) {
-      console.error('Auth error:', err);
-
-      // Handle specific Supabase error messages
-      if (err.message?.includes('Email not confirmed')) {
-        setError('Please check your email to confirm your account');
-      } else if (err.message?.includes('Invalid login credentials')) {
-        setError('Invalid email or password');
-      } else if (err.message?.includes('User already registered')) {
-        setError('An account with this email already exists');
+      if (result.error) {
+        setError(result.error);
+        setIsLoading(false);
       } else {
-        setError(err.message || 'Authentication failed');
+        // Success - redirect
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          router.push('/');
+        }
       }
-    } finally {
+    } catch (err: any) {
+      setError(err.message || 'Authentication failed');
       setIsLoading(false);
     }
   };

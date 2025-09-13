@@ -1,12 +1,11 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { completeOnboarding } from '@/lib/auth';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
 interface OnboardingProps {
-  onComplete: () => void;
+  onComplete?: () => void;
 }
 
 export default function Onboarding({ onComplete }: OnboardingProps) {
@@ -16,9 +15,9 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const [error, setError] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  const { updateAuthUser } = useAuth();
 
+  const { updateProfile } = useAuth();
+  const router = useRouter();
 
   const handleFileSelect = async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -43,7 +42,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragActive(false);
-    
+
     const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
       handleFileSelect(files[0]);
@@ -67,25 +66,24 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     setError('');
 
     try {
-      // Get the current user
-      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const result = await updateProfile({
+        name: name.trim(),
+        profile_photo: profilePhoto,
+        onboarding_complete: true,
+      });
 
-      if (!authUser) {
-        throw new Error('No authenticated user found');
+      if (result.error) {
+        setError(result.error);
+        setIsLoading(false);
+      } else {
+        if (onComplete) {
+          onComplete();
+        } else {
+          router.push('/');
+        }
       }
-
-      // Upload profile photo to Supabase Storage (optional - for now we'll use base64)
-      // In production, you'd want to upload to Supabase Storage or another service
-      // For now, we'll store the base64 string in the database
-
-      // Complete onboarding in database
-      const user = await completeOnboarding(authUser.id, name.trim(), profilePhoto);
-      updateAuthUser(user);
-      onComplete();
     } catch (err: any) {
-      console.error('Onboarding error:', err);
       setError(err.message || 'Failed to complete onboarding');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -121,11 +119,11 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             <label className="block text-white text-sm font-medium mb-3">
               Profile Photo
             </label>
-            
+
             <div
               className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
-                dragActive 
-                  ? 'border-gray-500 bg-gray-900' 
+                dragActive
+                  ? 'border-gray-500 bg-gray-900'
                   : 'border-gray-600 hover:border-gray-500'
               }`}
               onDrop={handleDrop}
@@ -181,7 +179,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                   </div>
                 </div>
               )}
-              
+
               <input
                 ref={fileInputRef}
                 type="file"

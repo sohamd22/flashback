@@ -11,7 +11,7 @@ import { generateMockGraphData } from '@/types/graph';
 import { FriendProfile } from '@/types/sharedMemory';
 
 function AppContent() {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { user, profile, isLoading, logout } = useAuth();
   const [showAuth, setShowAuth] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showPersonalPage, setShowPersonalPage] = useState(false);
@@ -20,12 +20,12 @@ function AppContent() {
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!user) {
       setShowAuth(true);
       setShowOnboarding(false);
       setShowPersonalPage(false);
       setShowUserDetail(false);
-    } else if (user && !user.onboardingComplete) {
+    } else if (profile && !profile.onboarding_complete) {
       setShowAuth(false);
       setShowOnboarding(true);
       setShowPersonalPage(false);
@@ -35,7 +35,7 @@ function AppContent() {
       setShowOnboarding(false);
       // Keep personal page and user detail state as user preference
     }
-  }, [isAuthenticated, user]);
+  }, [user, profile]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -52,26 +52,42 @@ function AppContent() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
+  }
+
   if (showAuth) {
     return (
-      <AuthForm 
-        onSuccess={() => setShowAuth(false)} 
+      <AuthForm
+        onSuccess={() => setShowAuth(false)}
       />
     );
   }
 
   if (showOnboarding) {
     return (
-      <Onboarding 
-        onComplete={() => setShowOnboarding(false)} 
+      <Onboarding
+        onComplete={() => setShowOnboarding(false)}
       />
     );
   }
 
-  if (showPersonalPage && user) {
+  if (showPersonalPage && profile) {
+    const userData = {
+      id: profile.id,
+      email: profile.email,
+      name: profile.name,
+      profilePhoto: profile.profile_photo,
+      onboardingComplete: profile.onboarding_complete
+    };
     return (
       <PersonalPage
-        user={user}
+        user={userData}
         onBack={() => setShowPersonalPage(false)}
         width={dimensions.width}
         height={dimensions.height}
@@ -79,10 +95,16 @@ function AppContent() {
     );
   }
 
-  if (showUserDetail && user && selectedFriend) {
+  if (showUserDetail && profile && selectedFriend) {
     return (
       <UserDetailPage
-        user={user}
+        user={{
+          id: profile.id,
+          email: profile.email,
+          name: profile.name,
+          profilePhoto: profile.profile_photo,
+          onboardingComplete: profile.onboarding_complete
+        }}
         friend={selectedFriend}
         onBack={() => {
           setShowUserDetail(false);
@@ -94,8 +116,8 @@ function AppContent() {
     );
   }
 
-  const graphData = user && user.profilePhoto && user.name 
-    ? generateMockGraphData(user.profilePhoto, user.name, dimensions.width, dimensions.height)
+  const graphData = profile && profile.profile_photo && profile.name
+    ? generateMockGraphData(profile.profile_photo, profile.name, dimensions.width, dimensions.height)
     : null;
 
   const handleFriendClick = (friendId: string) => {
@@ -135,7 +157,7 @@ function AppContent() {
 
       {/* Main content - Graph Canvas */}
       <div className="flex justify-center items-center px-6 pb-6">
-        {user && graphData ? (
+        {profile && graphData ? (
           <GraphCanvas 
             data={graphData}
             width={dimensions.width}
