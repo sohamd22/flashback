@@ -1,0 +1,8 @@
+BUCKET_NAME = "hack-bucket25"
+CHUNK_DURATION_SECONDS = 15
+PRESIGNED_URL_EXPIRY_SECONDS = 3600
+
+VIDEO_CHUNK_FORMAT = "mp4"
+TEMP_DIR = "/tmp"
+
+GCS_ENDPOINT_URL = "https://storage.googleapis.com"
