@@ -4,9 +4,9 @@ import tempfile
 import os
 import subprocess
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import uuid
-from utils.constants import TEMP_DIR
+from utils.constants import TEMP_DIR, SLIDING_WINDOW_SECONDS, CHUNK_DURATION_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,12 @@ logger = logging.getLogger(__name__)
 class VLMService:
     def __init__(self, api_key: str):
         self.client = anthropic.Anthropic(api_key=api_key)
-        logger.info("Initialized VLM service with Anthropic API")
+        self.sliding_window_chunks = int(
+            SLIDING_WINDOW_SECONDS / CHUNK_DURATION_SECONDS
+        )
+        logger.info(
+            f"Initialized VLM service with Anthropic API (sliding window: {self.sliding_window_chunks} chunks)"
+        )
 
     def extract_keyframes(
         self, video_data: bytes, timestamps: List[float] = None
@@ -105,6 +110,7 @@ class VLMService:
         start_time: float,
         end_time: float,
         video_filename: str = "video",
+        previous_descriptions: Optional[List[Tuple[int, float, float, str]]] = None,
     ) -> str:
         """
         Generate natural language description of video chunk using Claude Vision
@@ -116,22 +122,37 @@ class VLMService:
                 logger.warning(f"No keyframes extracted for chunk {chunk_index}")
                 return f"Video segment {chunk_index} from {start_time:.1f}s to {end_time:.1f}s"
 
-            messages = []
-            content = [
-                {
-                    "type": "text",
-                    "text": f"""Analyze these keyframes from a video segment (chunk {chunk_index},
+            # Build prompt with context from previous descriptions if available
+            prompt_text = f"""Analyze these keyframes from a video segment (chunk {chunk_index},
                     time {start_time:.1f}s to {end_time:.1f}s from file '{video_filename}').
+            """
 
-                    Provide a comprehensive description that includes:
+            # Add context from previous descriptions
+            if previous_descriptions:
+                prompt_text += "\n\nContext from previous segments:\n"
+                for prev_idx, prev_start, prev_end, prev_desc in previous_descriptions:
+                    prompt_text += f"\n- Segment {prev_idx} ({prev_start:.1f}s-{prev_end:.1f}s): {prev_desc}"
+                prompt_text += (
+                    "\n\nBased on the context above and the current keyframes, "
+                )
+            else:
+                prompt_text += "\n\n"
+
+            prompt_text += """Provide a comprehensive description that includes:
                     1. Main subjects and activities
                     2. Scene setting and environment
                     3. Notable objects or text visible
                     4. Any significant changes between frames
                     5. Overall context and mood
+                    6. How this segment relates to or continues from previous segments (if applicable)
 
                     Format your response as a single, searchable paragraph optimized for semantic search.
-                    Focus on concrete, observable details that would help someone find this segment.""",
+                    Focus on concrete, observable details that would help someone find this segment."""
+
+            content = [
+                {
+                    "type": "text",
+                    "text": prompt_text,
                 }
             ]
 
@@ -173,15 +194,57 @@ class VLMService:
         video_filename: str = "video",
     ) -> List[str]:
         """
-        Generate descriptions for multiple video chunks
+        Generate descriptions for multiple video chunks with sliding window context
         Returns list of descriptions in same order as chunks
         """
         descriptions = []
+        description_history = []  # List of (chunk_index, start_time, end_time, description_text)
 
         for chunk_id, chunk_data, chunk_index, start_time, end_time in chunks:
+            # Calculate which previous descriptions to include based on sliding window
+            relevant_context = []
+
+            if description_history:
+                # Include descriptions within the sliding window time range
+                window_start_time = max(0, start_time - SLIDING_WINDOW_SECONDS)
+
+                for hist_idx, hist_start, hist_end, hist_desc in description_history:
+                    # Include if the historical chunk ends after our window start
+                    if hist_end > window_start_time and hist_idx < chunk_index:
+                        relevant_context.append(
+                            (hist_idx, hist_start, hist_end, hist_desc)
+                        )
+
+                # Limit to most recent chunks based on sliding_window_chunks
+                if len(relevant_context) > self.sliding_window_chunks:
+                    relevant_context = relevant_context[-self.sliding_window_chunks :]
+
+                logger.info(
+                    f"Processing chunk {chunk_index} with context from {len(relevant_context)} previous chunks"
+                )
+
+            # Generate description with context
             description = self.generate_description(
-                chunk_data, chunk_index, start_time, end_time, video_filename
+                chunk_data,
+                chunk_index,
+                start_time,
+                end_time,
+                video_filename,
+                previous_descriptions=relevant_context if relevant_context else None,
             )
+
+            # Extract just the description text (remove the prefix)
+            if ": " in description:
+                description_text = description.split(": ", 1)[1]
+            else:
+                description_text = description
+
+            # Add to history for future chunks
+            description_history.append(
+                (chunk_index, start_time, end_time, description_text)
+            )
+
+            # Keep full formatted description for return
             descriptions.append(description)
 
         return descriptions
