@@ -1,12 +1,14 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
-import { User, AuthState, getAuthState, clearAuthState } from '@/lib/auth';
+import { User, AuthState, getAuthState, logout as authLogout } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
+import { Session } from '@supabase/supabase-js';
 
 interface AuthContextType extends AuthState {
-  logout: () => void;
+  logout: () => Promise<void>;
   updateAuthUser: (user: User) => void;
-  refreshAuth: () => void;
+  refreshAuth: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,30 +24,59 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [authState, setAuthState] = useState<AuthState>({
     isAuthenticated: false,
-    user: null
+    user: null,
+    session: null
   });
-  const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setAuthState(getAuthState());
-    setMounted(true);
+    // Initial auth check
+    refreshAuth();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event);
+
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        await refreshAuth();
+      } else if (event === 'SIGNED_OUT') {
+        setAuthState({ isAuthenticated: false, user: null, session: null });
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const logout = () => {
-    clearAuthState();
-    setAuthState({ isAuthenticated: false, user: null });
+  const refreshAuth = async () => {
+    setLoading(true);
+    try {
+      const state = await getAuthState();
+      setAuthState(state);
+    } catch (error) {
+      console.error('Error refreshing auth:', error);
+      setAuthState({ isAuthenticated: false, user: null, session: null });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    await authLogout();
+    setAuthState({ isAuthenticated: false, user: null, session: null });
   };
 
   const updateAuthUser = (user: User) => {
-    setAuthState({ isAuthenticated: true, user });
+    setAuthState(prev => ({ ...prev, user }));
   };
 
-  const refreshAuth = () => {
-    setAuthState(getAuthState());
-  };
-
-  if (!mounted) {
-    return null;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
   }
 
   return (

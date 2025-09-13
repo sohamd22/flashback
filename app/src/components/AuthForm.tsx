@@ -15,8 +15,8 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  
-  const { updateAuthUser } = useAuth();
+
+  const { updateAuthUser, refreshAuth } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,12 +35,33 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
       return;
     }
 
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const user = isSignup ? signup(email, password) : login(email, password);
+      const user = isSignup
+        ? await signup(email, password)
+        : await login(email, password);
+
       updateAuthUser(user);
+      await refreshAuth(); // Refresh to get the full session
       onSuccess();
-    } catch (err) {
-      setError('Authentication failed');
+    } catch (err: any) {
+      console.error('Auth error:', err);
+
+      // Handle specific Supabase error messages
+      if (err.message?.includes('Email not confirmed')) {
+        setError('Please check your email to confirm your account');
+      } else if (err.message?.includes('Invalid login credentials')) {
+        setError('Invalid email or password');
+      } else if (err.message?.includes('User already registered')) {
+        setError('An account with this email already exists');
+      } else {
+        setError(err.message || 'Authentication failed');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -127,8 +148,8 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
               className="text-gray-500 hover:text-white text-sm transition-colors duration-200"
               disabled={isLoading}
             >
-              {isSignup 
-                ? 'Already have an account? Sign in' 
+              {isSignup
+                ? 'Already have an account? Sign in'
                 : "Don't have an account? Sign up"
               }
             </button>

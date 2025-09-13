@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { completeOnboarding } from '@/lib/auth';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 interface OnboardingProps {
   onComplete: () => void;
@@ -11,7 +12,6 @@ interface OnboardingProps {
 export default function Onboarding({ onComplete }: OnboardingProps) {
   const [name, setName] = useState('');
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [dragActive, setDragActive] = useState(false);
@@ -19,48 +19,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   
   const { updateAuthUser } = useAuth();
 
-  const validateFace = async (imageData: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        canvas.width = img.width;
-        canvas.height = img.height;
-        
-        if (ctx) {
-          ctx.drawImage(img, 0, 0);
-          
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const data = imageData.data;
-          
-          let skinPixels = 0;
-          let totalPixels = 0;
-          
-          for (let i = 0; i < data.length; i += 4) {
-            const r = data[i];
-            const g = data[i + 1];
-            const b = data[i + 2];
-            
-            if (r > 95 && g > 40 && b > 20 &&
-                Math.max(r, g, b) - Math.min(r, g, b) > 15 &&
-                Math.abs(r - g) > 15 && r > g && r > b) {
-              skinPixels++;
-            }
-            totalPixels++;
-          }
-          
-          const skinRatio = skinPixels / (totalPixels / 4);
-          resolve(skinRatio > 0.1);
-        } else {
-          resolve(false);
-        }
-      };
-      img.onerror = () => resolve(false);
-      img.src = imageData;
-    });
-  };
 
   const handleFileSelect = async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -74,18 +32,10 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     }
 
     const reader = new FileReader();
-    reader.onload = async (e) => {
+    reader.onload = (e) => {
       const imageData = e.target?.result as string;
-      
-      const hasFace = await validateFace(imageData);
-      if (!hasFace) {
-        setError('Please upload a photo that includes your face');
-        return;
-      }
-      
       setError('');
       setProfilePhoto(imageData);
-      setPhotoFile(file);
     };
     reader.readAsDataURL(file);
   };
@@ -102,12 +52,12 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!name.trim()) {
       setError('Name is required');
       return;
     }
-    
+
     if (!profilePhoto) {
       setError('Profile photo is required');
       return;
@@ -117,11 +67,24 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     setError('');
 
     try {
-      const user = completeOnboarding(name.trim(), profilePhoto);
+      // Get the current user
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+
+      if (!authUser) {
+        throw new Error('No authenticated user found');
+      }
+
+      // Upload profile photo to Supabase Storage (optional - for now we'll use base64)
+      // In production, you'd want to upload to Supabase Storage or another service
+      // For now, we'll store the base64 string in the database
+
+      // Complete onboarding in database
+      const user = await completeOnboarding(authUser.id, name.trim(), profilePhoto);
       updateAuthUser(user);
       onComplete();
-    } catch (err) {
-      setError('Failed to complete onboarding');
+    } catch (err: any) {
+      console.error('Onboarding error:', err);
+      setError(err.message || 'Failed to complete onboarding');
     } finally {
       setIsLoading(false);
     }
@@ -157,9 +120,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           <div>
             <label className="block text-white text-sm font-medium mb-3">
               Profile Photo
-              <span className="text-gray-400 text-xs ml-2">
-                (must include your face)
-              </span>
             </label>
             
             <div
@@ -187,7 +147,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                       type="button"
                       onClick={() => {
                         setProfilePhoto(null);
-                        setPhotoFile(null);
                       }}
                       className="absolute -top-2 -right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center text-sm hover:bg-red-600 transition-colors"
                     >
