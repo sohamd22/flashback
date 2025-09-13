@@ -8,6 +8,7 @@ API_URL = "https://jzflint--video-processing-api-fastapi-app.modal.run"
 VIDEO_PATH = Path(__file__).parent / "demo_vid.mov"
 USER_ID = "test-user-123"
 
+
 def test_process_video():
     """Test the process-video endpoint"""
 
@@ -24,12 +25,14 @@ def test_process_video():
 
     try:
         # Prepare the request
-        with open(VIDEO_PATH, 'rb') as video_file:
-            files = {'video': (VIDEO_PATH.name, video_file, 'video/quicktime')}
-            data = {'user_id': USER_ID}
+        with open(VIDEO_PATH, "rb") as video_file:
+            files = {"video": (VIDEO_PATH.name, video_file, "video/quicktime")}
+            data = {"user_id": USER_ID}
 
             print("⏳ Uploading and processing video...")
-            response = requests.post(API_URL + "/process-video", files=files, data=data, timeout=120)
+            response = requests.post(
+                API_URL + "/process-video", files=files, data=data, timeout=120
+            )
 
         # Check response
         if response.status_code == 200:
@@ -42,11 +45,11 @@ def test_process_video():
             print(f"   Duration: {result.get('duration_seconds')} seconds")
             print(f"   Chunk IDs: {len(result.get('chunk_ids', []))} chunks created")
 
-            if result.get('chunk_ids'):
+            if result.get("chunk_ids"):
                 print("\n📦 First 3 chunk IDs:")
-                for i, chunk_id in enumerate(result['chunk_ids'][:3], 1):
+                for i, chunk_id in enumerate(result["chunk_ids"][:3], 1):
                     print(f"   {i}. {chunk_id}")
-                if len(result['chunk_ids']) > 3:
+                if len(result["chunk_ids"]) > 3:
                     print(f"   ... and {len(result['chunk_ids']) - 3} more")
 
         else:
@@ -54,16 +57,21 @@ def test_process_video():
             print(f"   Response: {response.text}")
 
     except requests.exceptions.Timeout:
-        print("❌ Request timed out. The video might be too large or the server is processing slowly.")
+        print(
+            "❌ Request timed out. The video might be too large or the server is processing slowly."
+        )
     except requests.exceptions.RequestException as e:
         print(f"❌ Request failed: {e}")
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
 
+
 def test_retrieve_clips():
     """Test the retrieve-clips endpoint"""
     QUERY_TEXT = "test query"
-    response = requests.post(API_URL + "/retrieve-clips", json={"user_id": USER_ID, "query": QUERY_TEXT})
+    response = requests.post(
+        API_URL + "/retrieve-clips", json={"user_id": USER_ID, "query": QUERY_TEXT}
+    )
 
     if response.status_code == 200:
         result = response.json()
@@ -73,7 +81,7 @@ def test_retrieve_clips():
         print(f"   Query: {result.get('query')}")
         print(f"   Total clips found: {len(result.get('clips', []))}")
 
-        clips = result.get('clips', [])
+        clips = result.get("clips", [])
         if clips:
             print("\n🎬 Clips with presigned URLs:")
             for i, clip in enumerate(clips[:3], 1):
@@ -81,7 +89,11 @@ def test_retrieve_clips():
                 print(f"     Chunk ID: {clip.get('chunk_id')}")
                 print(f"     Video ID: {clip.get('video_id')}")
                 print(f"     Score: {clip.get('score'):.4f}")
-                print(f"     URL: {clip.get('url')[:100]}..." if clip.get('url') else "     URL: None")
+                print(
+                    f"     URL: {clip.get('url')[:100]}..."
+                    if clip.get("url")
+                    else "     URL: None"
+                )
                 print(f"     Expires at: {clip.get('expires_at')}")
             if len(clips) > 3:
                 print(f"\n   ... and {len(clips) - 3} more clips")
@@ -89,14 +101,20 @@ def test_retrieve_clips():
         print(f"❌ Failed with status code: {response.status_code}")
         print(f"   Response: {response.text}")
 
+
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='Run video processing tests')
-    parser.add_argument('--test', choices=['process', 'retrieve', 'all'], required=True, help='Which test to run')
+    parser = argparse.ArgumentParser(description="Run video processing tests")
+    parser.add_argument(
+        "--test",
+        choices=["process", "retrieve", "all"],
+        required=True,
+        help="Which test to run",
+    )
     args = parser.parse_args()
 
-    if args.test == 'process' or args.test == 'all':
+    if args.test == "process" or args.test == "all":
         test_process_video()
-    if args.test == 'retrieve' or args.test == 'all':
+    if args.test == "retrieve" or args.test == "all":
         test_retrieve_clips()

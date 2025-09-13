@@ -2,7 +2,6 @@ import modal
 import os
 import uuid
 import logging
-from datetime import datetime
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 
@@ -14,7 +13,7 @@ from models.schemas import (
     ProcessVideoResponse,
     RetrieveClipsRequest,
     RetrieveClipsResponse,
-    ClipWithUrl
+    ClipWithUrl,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -56,6 +55,7 @@ anthropic_secret = modal.Secret.from_name(
     required_keys=["ANTHROPIC_API_KEY"],
 )
 
+
 @app.function(
     image=image,
     secrets=[gcs_secret, pinecone_secret, anthropic_secret],
@@ -68,28 +68,24 @@ def fastapi_app():
 
     # Initialize services
     storage_service = StorageService(
-        access_key_id=os.environ['GCP_ACCESS_KEY_ID'],
-        access_key_secret=os.environ['GCP_ACCESS_KEY_SECRET']
+        access_key_id=os.environ["GCP_ACCESS_KEY_ID"],
+        access_key_secret=os.environ["GCP_ACCESS_KEY_SECRET"],
     )
     vector_db_service = VectorDBService(
-        api_key=os.environ['PINECONE_API_KEY'],
-        index_host=os.environ['PINECONE_HOST']
+        api_key=os.environ["PINECONE_API_KEY"], index_host=os.environ["PINECONE_HOST"]
     )
     video_processor = VideoProcessor()
-    vlm_service = VLMService(
-        api_key=os.environ['ANTHROPIC_API_KEY']
-    )
+    vlm_service = VLMService(api_key=os.environ["ANTHROPIC_API_KEY"])
 
     @web_app.post("/process-video", response_model=ProcessVideoResponse)
-    async def process_video(
-        user_id: str = Form(...),
-        video: UploadFile = File(...)
-    ):
+    async def process_video(user_id: str = Form(...), video: UploadFile = File(...)):
         """Process and store a video, splitting it into chunks"""
         try:
             # Read video data
             video_data = await video.read()
-            logger.info(f"Processing video for user {user_id}, size: {len(video_data)} bytes")
+            logger.info(
+                f"Processing video for user {user_id}, size: {len(video_data)} bytes"
+            )
 
             # Validate video
             if not video_processor.validate_video(video_data):
@@ -111,7 +107,7 @@ def fastapi_app():
                     chunk_index=chunk_index,
                     start_time=start_time,
                     end_time=end_time,
-                    video_filename=video.filename
+                    video_filename=video.filename,
                 )
 
                 # Upload chunk to GCS
@@ -120,7 +116,7 @@ def fastapi_app():
                     user_id=user_id,
                     video_id=video_id,
                     chunk_id=chunk_id,
-                    chunk_index=chunk_index
+                    chunk_index=chunk_index,
                 )
 
                 # Store metadata in Pinecone with VLM-generated description
@@ -128,7 +124,7 @@ def fastapi_app():
                     chunk_id=chunk_id,
                     user_id=user_id,
                     video_id=video_id,
-                    text=description
+                    text=description,
                 )
 
                 chunk_ids.append(chunk_id)
@@ -142,7 +138,7 @@ def fastapi_app():
                 user_id=user_id,
                 chunk_ids=chunk_ids,
                 total_chunks=len(chunks),
-                duration_seconds=total_duration
+                duration_seconds=total_duration,
             )
 
         except Exception as e:
@@ -155,37 +151,37 @@ def fastapi_app():
         try:
             # Query Pinecone for relevant clips
             clips = vector_db_service.query_clips(
-                query_text=request.query,
-                user_id=request.user_id,
-                top_k=request.top_k
+                query_text=request.query, user_id=request.user_id, top_k=request.top_k
             )
 
             # Generate presigned URLs for each clip
             clips_with_urls = []
             for clip in clips:
                 # Reconstruct GCS path from metadata
-                logger.info(f"Getting chunk path for clip {clip['chunk_id'], clip['video_id'], request.user_id}")
+                logger.info(
+                    f"Getting chunk path for clip {clip['chunk_id'], clip['video_id'], request.user_id}"
+                )
                 gcs_path = storage_service.get_chunk_path(
                     user_id=request.user_id,
-                    video_id=clip['video_id'],
-                    chunk_id=clip['chunk_id']
+                    video_id=clip["video_id"],
+                    chunk_id=clip["chunk_id"],
                 )
 
                 url, expires_at = storage_service.generate_presigned_url(gcs_path)
 
-                clips_with_urls.append(ClipWithUrl(
-                    chunk_id=clip['chunk_id'],
-                    score=clip['score'],
-                    user_id=clip['user_id'],
-                    video_id=clip['video_id'],
-                    url=url,
-                    expires_at=expires_at
-                ))
+                clips_with_urls.append(
+                    ClipWithUrl(
+                        chunk_id=clip["chunk_id"],
+                        score=clip["score"],
+                        user_id=clip["user_id"],
+                        video_id=clip["video_id"],
+                        url=url,
+                        expires_at=expires_at,
+                    )
+                )
 
             return RetrieveClipsResponse(
-                user_id=request.user_id,
-                query=request.query,
-                clips=clips_with_urls
+                user_id=request.user_id, query=request.query, clips=clips_with_urls
             )
 
         except Exception as e:
@@ -200,8 +196,8 @@ def fastapi_app():
             "services": {
                 "storage": "initialized",
                 "vector_db": "initialized",
-                "video_processor": "initialized"
-            }
+                "video_processor": "initialized",
+            },
         }
 
     return web_app

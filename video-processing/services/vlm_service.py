@@ -16,7 +16,9 @@ class VLMService:
         self.client = anthropic.Anthropic(api_key=api_key)
         logger.info("Initialized VLM service with Anthropic API")
 
-    def extract_keyframes(self, video_data: bytes, timestamps: List[float] = None) -> List[bytes]:
+    def extract_keyframes(
+        self, video_data: bytes, timestamps: List[float] = None
+    ) -> List[bytes]:
         """
         Extract keyframes from video chunk at specified timestamps
         If no timestamps provided, extracts at 25%, 50%, 75% of duration
@@ -26,7 +28,9 @@ class VLMService:
 
         frames = []
 
-        with tempfile.NamedTemporaryFile(suffix='.mp4', dir=TEMP_DIR, delete=False) as input_file:
+        with tempfile.NamedTemporaryFile(
+            suffix=".mp4", dir=TEMP_DIR, delete=False
+        ) as input_file:
             input_file.write(video_data)
             input_file.flush()
             input_path = input_file.name
@@ -40,25 +44,31 @@ class VLMService:
 
                     try:
                         cmd = [
-                            'ffmpeg',
-                            '-i', input_path,
-                            '-ss', str(timestamp),
-                            '-vframes', '1',
-                            '-q:v', '2',
-                            '-y',
-                            frame_path
+                            "ffmpeg",
+                            "-i",
+                            input_path,
+                            "-ss",
+                            str(timestamp),
+                            "-vframes",
+                            "1",
+                            "-q:v",
+                            "2",
+                            "-y",
+                            frame_path,
                         ]
 
                         subprocess.run(cmd, capture_output=True, check=True)
 
-                        with open(frame_path, 'rb') as frame_file:
+                        with open(frame_path, "rb") as frame_file:
                             frame_data = frame_file.read()
                             frames.append(frame_data)
 
                         logger.info(f"Extracted keyframe at {timestamp:.2f}s")
 
                     except subprocess.CalledProcessError as e:
-                        logger.error(f"Failed to extract keyframe at {timestamp}: {e.stderr.decode()}")
+                        logger.error(
+                            f"Failed to extract keyframe at {timestamp}: {e.stderr.decode()}"
+                        )
                     finally:
                         if os.path.exists(frame_path):
                             os.remove(frame_path)
@@ -73,11 +83,14 @@ class VLMService:
         """Get video duration in seconds"""
         try:
             cmd = [
-                'ffprobe',
-                '-v', 'error',
-                '-show_entries', 'format=duration',
-                '-of', 'default=noprint_wrappers=1:nokey=1',
-                video_path
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                video_path,
             ]
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             return float(result.stdout.strip())
@@ -91,7 +104,7 @@ class VLMService:
         chunk_index: int,
         start_time: float,
         end_time: float,
-        video_filename: str = "video"
+        video_filename: str = "video",
     ) -> str:
         """
         Generate natural language description of video chunk using Claude Vision
@@ -118,43 +131,46 @@ class VLMService:
                     5. Overall context and mood
 
                     Format your response as a single, searchable paragraph optimized for semantic search.
-                    Focus on concrete, observable details that would help someone find this segment."""
+                    Focus on concrete, observable details that would help someone find this segment.""",
                 }
             ]
 
             for i, frame_data in enumerate(keyframes):
-                base64_image = base64.b64encode(frame_data).decode('utf-8')
-                content.append({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/jpeg",
-                        "data": base64_image
+                base64_image = base64.b64encode(frame_data).decode("utf-8")
+                content.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": base64_image,
+                        },
                     }
-                })
+                )
 
             response = self.client.messages.create(
                 model="claude-3-haiku-20240307",
                 max_tokens=300,
-                messages=[{
-                    "role": "user",
-                    "content": content
-                }]
+                messages=[{"role": "user", "content": content}],
             )
 
             description = response.content[0].text
-            logger.info(f"Generated description for chunk {chunk_index}: {description[:100]}...")
+            logger.info(
+                f"Generated description for chunk {chunk_index}: {description[:100]}..."
+            )
 
             return f"Segment {chunk_index} ({start_time:.1f}s-{end_time:.1f}s): {description}"
 
         except Exception as e:
-            logger.error(f"Failed to generate description for chunk {chunk_index}: {str(e)}")
+            logger.error(
+                f"Failed to generate description for chunk {chunk_index}: {str(e)}"
+            )
             return f"Video segment {chunk_index} from {video_filename} ({start_time:.1f}s to {end_time:.1f}s)"
 
     def generate_batch_descriptions(
         self,
         chunks: List[Tuple[str, bytes, int, float, float]],
-        video_filename: str = "video"
+        video_filename: str = "video",
     ) -> List[str]:
         """
         Generate descriptions for multiple video chunks
@@ -164,11 +180,7 @@ class VLMService:
 
         for chunk_id, chunk_data, chunk_index, start_time, end_time in chunks:
             description = self.generate_description(
-                chunk_data,
-                chunk_index,
-                start_time,
-                end_time,
-                video_filename
+                chunk_data, chunk_index, start_time, end_time, video_filename
             )
             descriptions.append(description)
 
