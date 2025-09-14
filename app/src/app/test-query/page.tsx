@@ -10,6 +10,7 @@ interface VideoClip {
   url: string;
   originalUrl: string;
   expires_at: string;
+  isFavorite?: boolean;
 }
 
 interface QueryResponse {
@@ -26,6 +27,8 @@ export default function TestQueryPage() {
   const [error, setError] = useState('');
   const [results, setResults] = useState<QueryResponse | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<{ [key: string]: boolean }>({});
+  const [loadingFavorite, setLoadingFavorite] = useState<string | null>(null);
 
   // Memory creation states
   const [showMemoryUpload, setShowMemoryUpload] = useState(false);
@@ -71,11 +74,98 @@ export default function TestQueryPage() {
       // Auto-select first video if available
       if (data.clips && data.clips.length > 0) {
         setSelectedVideo(data.clips[0].url);
+
+        // Check favorite status for all clips
+        await checkFavoriteStatus(data.clips.map((clip: VideoClip) => clip.chunk_id));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkFavoriteStatus = async (chunkIds: string[]) => {
+    if (!userId || chunkIds.length === 0) return;
+
+    try {
+      const response = await fetch('/api/favorites/check', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId,
+          chunkIds,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setFavorites(data.favorites);
+      }
+    } catch (error) {
+      console.error('Error checking favorite status:', error);
+    }
+  };
+
+  const toggleFavorite = async (clip: VideoClip) => {
+    if (!userId) {
+      setError('Please enter a User ID to save favorites');
+      return;
+    }
+
+    setLoadingFavorite(clip.chunk_id);
+    const isFavorite = favorites[clip.chunk_id];
+
+    try {
+      if (isFavorite) {
+        // Remove from favorites
+        const response = await fetch('/api/favorites/remove', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId,
+            chunkId: clip.chunk_id,
+          }),
+        });
+
+        if (response.ok) {
+          setFavorites(prev => ({ ...prev, [clip.chunk_id]: false }));
+        } else {
+          throw new Error('Failed to remove favorite');
+        }
+      } else {
+        // Add to favorites
+        const response = await fetch('/api/favorites/add', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId,
+            chunkId: clip.chunk_id,
+            videoId: clip.video_id,
+            videoUrl: clip.originalUrl,
+            query: results?.query,
+            score: clip.score,
+          }),
+        });
+
+        if (response.ok) {
+          setFavorites(prev => ({ ...prev, [clip.chunk_id]: true }));
+        } else {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to add favorite');
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      setError(error instanceof Error ? error.message : 'Failed to update favorite');
+    } finally {
+      setLoadingFavorite(null);
     }
   };
 
@@ -301,15 +391,42 @@ export default function TestQueryPage() {
                         <div>User: {clip.user_id}</div>
                       </div>
 
-                      <button
-                        className="w-full mt-2 py-1 px-2 bg-gray-700 hover:bg-gray-600 rounded text-xs transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedVideo(clip.url);
-                        }}
-                      >
-                        Play Video
-                      </button>
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          className="flex-1 py-1 px-2 bg-gray-700 hover:bg-gray-600 rounded text-xs transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedVideo(clip.url);
+                          }}
+                        >
+                          Play Video
+                        </button>
+                        <button
+                          className={`py-1 px-2 rounded text-xs transition-colors ${
+                            favorites[clip.chunk_id]
+                              ? 'bg-red-600 hover:bg-red-700 text-white'
+                              : 'bg-gray-700 hover:bg-gray-600 text-white'
+                          } ${
+                            loadingFavorite === clip.chunk_id
+                              ? 'opacity-50 cursor-not-allowed'
+                              : ''
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(clip);
+                          }}
+                          disabled={loadingFavorite === clip.chunk_id}
+                          title={favorites[clip.chunk_id] ? 'Remove from favorites' : 'Add to favorites'}
+                        >
+                          {loadingFavorite === clip.chunk_id ? (
+                            '...'
+                          ) : favorites[clip.chunk_id] ? (
+                            '❤️'
+                          ) : (
+                            '🤍'
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
