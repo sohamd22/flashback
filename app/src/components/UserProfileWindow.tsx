@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useVideoAPI, VideoClip } from '@/hooks/useVideoAPI';
+import RetroVideoPlayer from './RetroVideoPlayer';
 
 interface UserProfileWindowProps {
   userId: string;
@@ -22,6 +23,7 @@ export default function UserProfileWindow({
   const [favoriteVideos, setFavoriteVideos] = useState<VideoClip[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<VideoClip | null>(null);
 
   useEffect(() => {
     const loadFavorites = async () => {
@@ -104,17 +106,26 @@ export default function UserProfileWindow({
                     boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,1)',
                     imageRendering: 'pixelated'
                   }}
+                  onClick={() => {
+                    console.log('Video selected:', video);
+                    if (video.url) {
+                      setSelectedVideo(video);
+                    } else {
+                      console.error('Video has no URL:', video);
+                    }
+                  }}
                 >
-                  <div className="aspect-video bg-gray-800 border border-gray-600 mb-2 flex items-center justify-center">
+                  <div className="aspect-video bg-gray-800 border border-gray-600 mb-2 flex items-center justify-center hover:bg-gray-700 transition-colors">
                     {video.url ? (
-                      <iframe
-                        src={video.url}
-                        className="w-full h-full"
-                        style={{ imageRendering: 'pixelated' }}
-                        title={`Video ${index + 1}`}
-                      />
+                      <div className="text-center">
+                        <div className="text-white text-2xl mb-1">🎬</div>
+                        <div className="text-white text-xs">Click to Play</div>
+                      </div>
                     ) : (
-                      <div className="text-white text-xs">🎬</div>
+                      <div className="text-center">
+                        <div className="text-red-400 text-2xl mb-1">❌</div>
+                        <div className="text-red-400 text-xs">No URL</div>
+                      </div>
                     )}
                   </div>
                   <div className="text-xs text-gray-800 font-bold truncate">
@@ -158,6 +169,27 @@ export default function UserProfileWindow({
           </div>
         </div>
       </div>
+
+      {/* Video player modal */}
+      {selectedVideo && selectedVideo.url && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => setSelectedVideo(null)}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <RetroVideoPlayer
+              video={{
+                ...selectedVideo,
+                url: selectedVideo.url,
+                query: selectedVideo.query || `Favorite Video`
+              }}
+              width={Math.min(480, width - 40)}
+              height={Math.min(360, height - 120)}
+              onClose={() => setSelectedVideo(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

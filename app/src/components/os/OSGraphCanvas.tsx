@@ -75,11 +75,11 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
       const interactionCount = connection.interactions || 0;
       const maxInteractions = Math.max(...data.connections.map(c => c.interactions || 0), 1);
       
-      // Distance based on interaction strength
-      const minDistance = radius * 0.6;
+      // Distance based on interaction strength with minimum distance to prevent overlap
+      const minDistance = Math.max(radius * 0.4, 200); // At least 100px from center, even with highest interactions
       const maxDistance = radius * 1.0;
       const normalizedInteractions = interactionCount / maxInteractions;
-      const distance = maxDistance - (normalizedInteractions * (maxDistance - minDistance));
+      const distance = Math.max(minDistance, maxDistance - (normalizedInteractions * (maxDistance - minDistance)));
       
       // Random angle for natural scatter
       const nodeIndex = Array.from(firstDegreeNodes.keys()).indexOf(nodeId);
@@ -108,10 +108,10 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
       });
       
       if (friendConnections.length === 0) {
-        // No connections to your friends - place far away randomly
+        // No connections to your friends - place far away randomly with minimum distance
         const nodeIndex = secondDegreeNodes.findIndex(n => n.id === node.id);
         const angle = (nodeIndex * 137.5) * (Math.PI / 180);
-        const distance = radius * 1.6; // Very far
+        const distance = Math.max(radius * 1.4, 250); // At least 250px from center
         
         positionedNodesMap.set(node.id, {
           ...node,
@@ -133,10 +133,10 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
       const friendNode = positionedNodesMap.get(connectedFriendId);
       
       if (!friendNode) {
-        // Fallback positioning
+        // Fallback positioning with minimum distance
         const nodeIndex = secondDegreeNodes.findIndex(n => n.id === node.id);
         const angle = (nodeIndex * 137.5) * (Math.PI / 180);
-        const distance = radius * 1.4;
+        const distance = Math.max(radius * 1.2, 220); // At least 220px from center
         
         positionedNodesMap.set(node.id, {
           ...node,
@@ -146,10 +146,19 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
         return;
       }
       
-      // Position this node in a cluster around the friend
+      // Position this node in a cluster around the friend based on interaction strength
       const nodeIndex = secondDegreeNodes.findIndex(n => n.id === node.id);
-      const clusterAngle = (nodeIndex * 60 + Math.sin(nodeIndex) * 45) * (Math.PI / 180);
-      const clusterDistance = 80 + (Math.cos(nodeIndex * 1.3) * 20); // 60-100px from friend
+      const interactionStrength = (strongestConnection.interactions || 1) / Math.max(...data.connections.map(c => c.interactions || 0), 1);
+      
+      // Base cluster distance on interaction strength, but with minimum distance for all connections
+      const baseClusterDistance = 120; // Minimum distance from any friend
+      const maxClusterDistance = 180;   // Maximum distance for weak connections
+      const clusterDistance = Math.max(baseClusterDistance, 
+        maxClusterDistance - (interactionStrength * (maxClusterDistance - baseClusterDistance))
+      );
+      
+      // Spread nodes around the friend with better spacing
+      const clusterAngle = (nodeIndex * 72 + Math.sin(nodeIndex * 1.7) * 30) * (Math.PI / 180); // 72° spacing (5 positions max per friend)
       
       // Calculate position relative to friend, but away from center
       const friendToCenterAngle = Math.atan2(friendNode.y - centerY, friendNode.x - centerX);
