@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------
 # Utilities
-# ---------------------------------------------
+
+
 def decode_image_base64_str(image_str: str) -> bytes:
     """Decode a base64 image string into raw bytes.
 
@@ -63,7 +64,7 @@ def decode_image_base64_str(image_str: str) -> bytes:
         logger.info(f"Added {padding_needed} padding characters, final length: {len(clean_str)}")
 
     try:
-        decoded = base64.b64decode(clean_str, validate=True)
+        decoded = base64.b64decode(clean_str, validate=False)
         logger.info(f"Successfully decoded base64 string to {len(decoded)} bytes")
     except Exception as e:
         logger.error(f"Standard b64decode failed: {str(e)}")
@@ -86,6 +87,27 @@ def decode_image_base64_str(image_str: str) -> bytes:
         raise ValueError("Decoded image_data is empty")
 
     return decoded
+
+def try_repair_base64(b64_str: str) -> str:
+    """Try to repair a potentially corrupted base64 string."""
+    # Remove any whitespace
+    b64_str = re.sub(r'\s', '', b64_str)
+    
+    # Remove common corruption characters
+    b64_str = b64_str.replace('.', '')  # Periods are common corruption
+    
+    # Keep only valid base64 characters
+    b64_str = re.sub(r'[^A-Za-z0-9+/=]', '', b64_str)
+    
+    # Remove existing padding
+    b64_str = b64_str.rstrip('=')
+    
+    # Add correct padding
+    padding_needed = (-len(b64_str)) % 4
+    if padding_needed:
+        b64_str += "=" * padding_needed
+        
+    return b64_str
 
 def debug_base64_string(b64_str: str, profile_id: str = "unknown") -> Dict[str, Any]:
     """Debug function to analyze a base64 string and return diagnostics"""
@@ -298,7 +320,7 @@ class SupabaseClient:
             logger.info(f"Direct fetch returned {len(all_data)} profiles")
 
             # Filter for profiles with photos
-            filtered_profiles = [p for p in all_data if p.get('profile_photo')]
+            filtered_profiles = [p for p in all_data if bool(p.get('profile_photo'))]
             logger.info(f"Profiles with photos via direct fetch: {len(filtered_profiles)}")
 
             # Log some sample data
@@ -311,7 +333,7 @@ class SupabaseClient:
                 logger.info(f"Processing profile {profile.get('id')}: has_face_encoding={bool(profile.get('face_encoding'))}, has_profile_photo={bool(profile.get('profile_photo'))}")
 
                 # If face encoding exists, deserialize it
-                if profile.get("face_encoding"):
+                if bool(profile.get("face_encoding")):
                     try:
                         encoding_b64 = profile["face_encoding"]
                         encoding_bytes = base64.b64decode(encoding_b64.encode('utf-8'))
@@ -345,7 +367,7 @@ class SupabaseClient:
             profiles = []
             for profile in result.data:
                 # If face encoding exists, deserialize it
-                if profile.get("face_encoding"):
+                if bool(profile.get("face_encoding")):
                     encoding_b64 = profile["face_encoding"]
                     encoding_bytes = base64.b64decode(encoding_b64.encode('utf-8'))
                     face_encoding = pickle.loads(encoding_bytes)
@@ -357,54 +379,6 @@ class SupabaseClient:
 
         except Exception as e:
             logger.error(f"Error retrieving specific profiles: {str(e)}")
-            raise
-
-    def store_video_analysis(
-        self,
-        user_id: str,
-        video_id: str,
-        video_url: str,
-        total_chunks: int,
-        analysis_results: Dict,
-    ) -> Dict:
-        """Store video analysis results"""
-        try:
-            analysis_data = {
-                "user_id": user_id,
-                "video_id": video_id,
-                "video_url": video_url,
-                "total_chunks": total_chunks,
-                "analysis_results": analysis_results,
-            }
-
-            result = (
-                self.client.table("video_analyses")
-                .insert(analysis_data)
-                .execute()
-            )
-
-            logger.info(f"Stored analysis for video {video_id}")
-            return result.data[0] if result.data else {}
-
-        except Exception as e:
-            logger.error(f"Error storing video analysis: {str(e)}")
-            raise
-
-    def get_video_analysis(self, user_id: str, video_id: str) -> Optional[Dict]:
-        """Get video analysis results"""
-        try:
-            result = (
-                self.client.table("video_analyses")
-                .select("*")
-                .eq("user_id", user_id)
-                .eq("video_id", video_id)
-                .execute()
-            )
-
-            return result.data[0] if result.data else None
-
-        except Exception as e:
-            logger.error(f"Error retrieving video analysis: {str(e)}")
             raise
 
     def add_video_to_profile(self, profile_id: str, video_id: str) -> Dict:
@@ -933,15 +907,25 @@ class FacialRecognitionService:
                 profiles = self.supabase_client.get_all_profiles_with_photos()
 
             logger.info(f"Loaded {len(profiles)} profiles from database")
-            for profile in profiles:
-                logger.info(f"Profile {profile.get('id')}: name={profile.get('name')}, has_face_encoding={bool(profile.get('face_encoding'))}, has_profile_photo={bool(profile.get('profile_photo'))}")
+            # for profile in profiles:
+            #     logger.info(f"Profile {profile.get('id')}: name={profile.get('name')}, has_face_encoding={bool(profile.get('face_encoding'))}, has_profile_photo={bool(profile.get('profile_photo'))}")
 
             # Generate face encodings for profiles that have photos but no encodings
             profile_encodings = {}
             for profile in profiles:
-                if profile.get("face_encoding"):
-                    profile_encodings[profile["id"]] = profile["face_encoding"]
-                elif profile.get("profile_photo"):
+
+                # log the current line number
+                logger.info(f"Current line number: 918")
+                face_encoding = profile.get("face_encoding", None)
+                logger.info(f"Current line number: 919")
+                profile_photo = profile.get("profile_photo", None)
+                logger.info(f"Current line number: 920")
+
+                if face_encoding is not None and any(face_encoding):
+                    logger.info(f"Profile {profile['id']} has face encoding")
+                    profile_encodings[profile["id"]] = face_encoding
+                
+                elif profile_photo is not None and any(profile_photo):
                     try:
                         # Generate face encoding from profile photo
                         logger.info(f"Generating face encoding for profile {profile['id']} from profile photo")
@@ -954,7 +938,8 @@ class FacialRecognitionService:
                             logger.info(f"Removed data:image/jpeg;base64, prefix from profile {profile['id']}")
                         
                         logger.info(f"Decoding base64 profile_photo for {profile['id']}...")
-                        image_data = decode_image_base64_str(profile_photo)
+                        # image_data = decode_image_base64_str(profile_photo.strip())
+                        image_data = base64.b64decode(profile_photo.strip())
                         logger.info(f"Decoded base64 for profile {profile['id']}, size: {len(image_data)} bytes")
 
                         face_encoding = self.face_processor.create_face_encoding_from_image(image_data)
@@ -1083,14 +1068,6 @@ class FacialRecognitionService:
                 for profile_id, result in interaction_results.items()
             }
 
-            self.supabase_client.store_video_analysis(
-                user_id=requester_user_id,
-                video_id=video_id,
-                video_url=video_url,
-                total_chunks=len(chunks),
-                analysis_results=analysis_data,
-            )
-
             logger.info(f"Analysis complete. Found {len(interaction_results)} profiles, recorded {len(new_interactions)} interactions")
             return video_id, len(chunks), interaction_results, new_interactions
 
@@ -1179,6 +1156,10 @@ image = (
         "face-recognition",
         "supabase",
         "dlib",
+        "uvicorn",
+        "pytest",
+        "pytest-asyncio",
+        "opencv-python",
     )
 )
 
@@ -1189,7 +1170,8 @@ supabase_secret = modal.Secret.from_name(
 )
 
 @app.function(
-    image=modal.Image.from_id("im-S5aildNoLYgrR3Rhdfl6RC"),
+    # image=modal.Image.from_id("im-S5aildNoLYgrR3Rhdfl6RC"),
+    image=image,
     secrets=[supabase_secret],
     timeout=1800,  # 30 minutes for long video processing
     memory=4096,   # More memory for face processing
@@ -1256,41 +1238,6 @@ def fastapi_app():
             logger.error(f"Error analyzing video: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
-
-    @web_app.get("/analysis/{video_id}", response_model=GetAnalysisResponse)
-    async def get_analysis(video_id: str, requester_user_id: str):
-        """Get stored video analysis results"""
-        try:
-            analysis = supabase_client.get_video_analysis(requester_user_id, video_id)
-
-            if not analysis:
-                raise HTTPException(status_code=404, detail="Analysis not found")
-
-            # Convert stored results to API format
-            detected_profiles = {}
-            for profile_id, result in analysis["analysis_results"].items():
-                detected_profiles[profile_id] = InteractionData(
-                    profile_id=result.get("profile_id", profile_id),
-                    profile_name=result.get("profile_name"),
-                    profile_email=result.get("profile_email", ""),
-                    chunk_appearances=result["chunk_appearances"],
-                    interactions=result["interactions"],
-                    face_images=result.get("face_images", []),
-                )
-
-            return GetAnalysisResponse(
-                video_id=analysis["video_id"],
-                requester_user_id=analysis["user_id"],
-                video_url=analysis["video_url"],
-                total_chunks=analysis["total_chunks"],
-                detected_profiles=detected_profiles,
-                created_at=analysis["created_at"],
-            )
-
-        except Exception as e:
-            logger.error(f"Error retrieving analysis: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
-
     @web_app.get("/profiles")
     async def list_profiles():
         """List all profiles from Supabase"""
@@ -1311,7 +1258,11 @@ def fastapi_app():
         """Add face encoding to a profile from base64 image data"""
         try:
             # Decode base64 image data into bytes
-            image_bytes = decode_image_base64_str(request.image_data)
+            # image_bytes = decode_image_base64_str(request.image_data.strip())
+            image_data = request.image_data.strip()
+            if request.image_data.startswith("data:image/jpeg;base64,"):
+                image_data = image_data[len("data:image/jpeg;base64,"):]
+            image_bytes = base64.b64decode(image_data)
             profile_input = ServiceProfileInput(profile_id=profile_id, image_data=image_bytes)
 
             result = facial_recognition_service.process_profile_inputs([profile_input])

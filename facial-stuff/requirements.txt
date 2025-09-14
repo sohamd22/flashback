@@ -11,3 +11,4 @@ dlib
 uvicorn
 pytest
 pytest-asyncio
+cv2
