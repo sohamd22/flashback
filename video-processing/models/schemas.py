@@ -32,6 +32,22 @@ class RetrieveClipsResponse(BaseModel):
     clips: List[ClipWithUrl]
 
 
+class ClipWithDescription(BaseModel):
+    chunk_id: str
+    score: float
+    user_id: str
+    video_id: str
+    description: str
+    url: str
+    expires_at: datetime
+
+
+class RetrieveClipsWithDescriptionsResponse(BaseModel):
+    user_id: str
+    query: str
+    clips: List[ClipWithDescription]
+
+
 class ProcessPhotoResponse(BaseModel):
     photo_id: str
     user_id: str
