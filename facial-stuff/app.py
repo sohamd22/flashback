@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client, Client
 
@@ -1222,6 +1223,15 @@ supabase_secret = modal.Secret.from_name(
 @modal.asgi_app()
 def fastapi_app():
     web_app = FastAPI(title="Facial Recognition API", version="1.0.0")
+
+    # Add CORS middleware to allow all origins
+    web_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Allows all origins
+        allow_credentials=True,
+        allow_methods=["*"],  # Allows all methods
+        allow_headers=["*"],  # Allows all headers
+    )
 
     # Initialize services
     supabase_client = SupabaseClient(
