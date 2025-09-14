@@ -10,6 +10,7 @@ from services.vector_db import VectorDBService
 from services.video_processor import VideoProcessor
 from services.vlm_service import VLMService
 from services.transcription_service import TranscriptionService
+from services.facial_recognition import FacialRecognitionService
 from models.schemas import (
     ProcessVideoResponse,
     ProcessPhotoResponse,
@@ -30,6 +31,7 @@ image = (
     .pip_install(
         "boto3",
         "requests",
+        "httpx",
         "pinecone",
         "fastapi",
         "python-multipart",
@@ -85,6 +87,7 @@ def fastapi_app():
     video_processor = VideoProcessor()
     vlm_service = VLMService(api_key=os.environ["ANTHROPIC_API_KEY"])
     transcription_service = TranscriptionService(api_key=os.environ["OPENAI_API_KEY"])
+    facial_recognition_service = FacialRecognitionService()
 
     @web_app.post("/process-photo", response_model=ProcessPhotoResponse)
     async def process_photo(user_id: str = Form(...), photo: UploadFile = File(...)):
@@ -215,6 +218,29 @@ def fastapi_app():
 
             # Calculate total duration
             total_duration = chunks[-1][4] if chunks else 0
+
+            # Send all video chunks to facial recognition service (fire-and-forget)
+            if chunk_ids:
+                for i, chunk_id in enumerate(chunk_ids):
+                    try:
+                        # Get the path for each chunk
+                        chunk_path = storage_service.get_chunk_path(
+                            user_id=user_id,
+                            video_id=video_id,
+                            chunk_id=chunk_id
+                        )
+                        # Generate presigned URL for facial recognition
+                        video_url, _ = storage_service.generate_presigned_url(chunk_path)
+
+                        # Fire-and-forget call to facial recognition for each chunk
+                        await facial_recognition_service.analyze_video_async(
+                            user_id=user_id,
+                            video_url=video_url
+                        )
+                        logger.info(f"Sent chunk {i+1}/{len(chunk_ids)} of video {video_id} to facial recognition service")
+                    except Exception as e:
+                        # Log but don't fail the video processing
+                        logger.warning(f"Could not send chunk {chunk_id} to facial recognition: {str(e)}")
 
             return ProcessVideoResponse(
                 video_id=video_id,
