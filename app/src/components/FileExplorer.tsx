@@ -207,7 +207,7 @@ export default function FileExplorer({ width, height, onOpenGraphWindow }: FileE
                               }}
                             />
                             <button
-                              onClick={handleSearch}
+                              onClick={() => handleSearch()}
                               disabled={loading}
                               className="px-3 py-1 bg-blue-600 border-2 border-blue-400 text-white text-xs hover:bg-blue-500 disabled:opacity-50 font-bold"
                               style={{ imageRendering: 'pixelated' }}
