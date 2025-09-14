@@ -218,16 +218,22 @@ export default function RealVideoGraphCanvas({
       }
     }
 
-    // Reset drag state after a short delay to prevent click from firing
+    setDragState({
+      isDragging: false,
+      nodeId: dragState.nodeId, // Keep nodeId temporarily
+      offset: { x: 0, y: 0 },
+      originalPosition: { x: 0, y: 0 },
+      hasDragged: dragState.hasDragged // Keep hasDragged temporarily
+    });
+
+    // Clear the drag state completely after a short delay
     setTimeout(() => {
-      setDragState({
-        isDragging: false,
+      setDragState(prev => ({
+        ...prev,
         nodeId: null,
-        offset: { x: 0, y: 0 },
-        originalPosition: { x: 0, y: 0 },
         hasDragged: false
-      });
-    }, 10);
+      }));
+    }, 200);
   };
 
   const animateVideoBack = (videoId: string, currentPos: { x: number; y: number }, targetPos: { x: number; y: number }) => {
@@ -539,21 +545,37 @@ export default function RealVideoGraphCanvas({
               zIndex: isDragging ? 20 : 5,
               transform: isDragging ? 'translate(-50%, -50%) scale(1.1)' : 'translate(-50%, -50%) scale(1)'
             }}
-            onClick={() => {
-              // Only open video if we didn't drag
-              if (!dragState.hasDragged && !dragState.isDragging) {
-                if (onOpenVideoPlayer) {
-                  onOpenVideoPlayer(video);
-                } else {
-                  setSelectedVideo(video);
+            onClick={(e) => {
+              // Prevent video opening during or immediately after drag
+              e.stopPropagation();
+              
+              setTimeout(() => {
+                // Only open if we're not dragging and haven't dragged this node
+                if (!dragState.isDragging && !(dragState.nodeId === video.chunk_id && dragState.hasDragged)) {
+                  if (onOpenVideoPlayer) {
+                    onOpenVideoPlayer(video);
+                  } else {
+                    setSelectedVideo(video);
+                  }
                 }
-              }
+              }, 50);
             }}
             onMouseDown={(e) => {
               e.preventDefault();
               const containerRect = e.currentTarget.parentElement?.getBoundingClientRect();
               
               if (!containerRect) return;
+
+              // Reset drag state if clicking on a different node
+              if (dragState.nodeId !== video.chunk_id) {
+                setDragState({
+                  isDragging: false,
+                  nodeId: null,
+                  offset: { x: 0, y: 0 },
+                  originalPosition: { x: 0, y: 0 },
+                  hasDragged: false
+                });
+              }
 
               setDragState({
                 isDragging: true,
