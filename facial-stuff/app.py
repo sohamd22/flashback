@@ -435,36 +435,6 @@ class SupabaseClient:
             logger.error(f"Error upserting interaction: {str(e)}")
             raise
 
-    def store_chunk_detection(
-        self,
-        video_id: str,
-        chunk_index: int,
-        profile_id: str,
-        confidence: float,
-        bbox: Optional[Dict] = None,
-    ) -> Dict:
-        """Store individual chunk detection for debugging"""
-        try:
-            detection_data = {
-                "video_id": video_id,
-                "chunk_index": chunk_index,
-                "contact_id": profile_id,  # Using profile_id as contact_id for backward compatibility
-                "confidence": confidence,
-                "bbox": bbox,
-            }
-
-            result = (
-                self.client.table("chunk_detections")
-                .insert(detection_data)
-                .execute()
-            )
-
-            return result.data[0] if result.data else {}
-
-        except Exception as e:
-            logger.error(f"Error storing chunk detection: {str(e)}")
-            raise
-
 class VideoChunker:
     def __init__(self, chunk_duration_seconds: int = 5):
         self.chunk_duration = chunk_duration_seconds
@@ -623,8 +593,8 @@ class VideoChunker:
 class FaceProcessor:
     def __init__(
         self,
-        face_match_threshold: float = 0.6,
-        new_contact_threshold: float = 0.5,
+        face_match_threshold: float = 0.4,  # More lenient threshold (distance ≤ 0.6)
+        new_contact_threshold: float = 0.3,
         frame_skip: int = 3,  # Process every 3rd frame for speed
         detection_scale: float = 0.5,  # Scale down frames for detection
     ):
@@ -632,6 +602,12 @@ class FaceProcessor:
         self.new_contact_threshold = new_contact_threshold
         self.frame_skip = frame_skip
         self.detection_scale = detection_scale
+        
+        # Log threshold information
+        logger.info(f"🎯 Face matching configuration:")
+        logger.info(f"   Confidence threshold: {self.face_match_threshold:.3f}")
+        logger.info(f"   Corresponding max distance: {1.0 - self.face_match_threshold:.3f}")
+        logger.info(f"   Standard recommendation: confidence ≥ 0.4 (distance ≤ 0.6)")
 
     def extract_frames_from_video_chunk(self, video_chunk_data: bytes) -> List[np.ndarray]:
         """Extract all frames from a video chunk"""
@@ -761,6 +737,75 @@ class FaceProcessor:
             return MatchResult(
                 profile_id=profile_ids[min_distance_idx],
                 confidence=confidence,
+                is_existing_profile=True
+            )
+
+        return None
+
+    def match_face_to_profiles_with_detailed_scores(
+        self,
+        face_encoding: np.ndarray,
+        profile_encodings: Dict[str, np.ndarray],
+        chunk_index: int,
+        face_index: int
+    ) -> Optional[MatchResult]:
+        """Match a face encoding to existing profiles with detailed confidence logging"""
+        if not profile_encodings:
+            logger.info(f"Chunk {chunk_index}, Face {face_index}: No profiles to match against")
+            return None
+
+        profile_ids = list(profile_encodings.keys())
+        known_encodings = list(profile_encodings.values())
+
+        # Calculate distances to all known faces
+        distances = face_recognition.face_distance(known_encodings, face_encoding)
+
+        logger.info(f"\n{'='*60}")
+        logger.info(f"CHUNK {chunk_index}, FACE {face_index} - CONFIDENCE SCORES:")
+        logger.info(f"{'='*60}")
+        
+        # Calculate and log confidence scores for ALL profiles
+        all_scores = []
+        for i, (profile_id, distance) in enumerate(zip(profile_ids, distances)):
+            confidence = 1.0 - distance
+            all_scores.append((profile_id, confidence, distance))
+            
+            # Add interpretation based on standard thresholds
+            if distance <= 0.4:
+                interpretation = "🟢 Excellent match"
+            elif distance <= 0.6:
+                interpretation = "🟡 Good match (standard threshold)"
+            elif distance <= 0.8:
+                interpretation = "🟠 Possible match (borderline)"
+            else:
+                interpretation = "🔴 Poor match"
+                
+            logger.info(f"Profile {profile_id}: Confidence = {confidence:.4f} (Distance = {distance:.4f}) - {interpretation}")
+        
+        # Sort by confidence (highest first)
+        all_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        logger.info(f"\nTOP 5 MATCHES (sorted by confidence):")
+        for i, (profile_id, confidence, distance) in enumerate(all_scores[:5]):
+            status = "✓ MATCH" if confidence >= self.face_match_threshold else "✗ below threshold"
+            standard_match = "✓ Standard" if distance <= 0.6 else "✗ Above 0.6"
+            logger.info(f"  {i+1}. Profile {profile_id}: {confidence:.4f} (dist:{distance:.4f}) [{status}] [{standard_match}]")
+        
+        logger.info(f"\n📊 THRESHOLD INFO:")
+        logger.info(f"   Current threshold: {self.face_match_threshold:.3f} (max distance: {1.0-self.face_match_threshold:.3f})")
+        logger.info(f"   Standard recommendation: 0.4 (max distance: 0.6)")
+        logger.info(f"   Interpretation: Lower distance = higher similarity")
+        logger.info(f"{'='*60}\n")
+
+        # Find the best match
+        min_distance_idx = np.argmin(distances)
+        min_distance = distances[min_distance_idx]
+        best_confidence = 1.0 - min_distance
+
+        if best_confidence >= self.face_match_threshold:
+            return MatchResult(
+                profile_id=profile_ids[min_distance_idx],
+                confidence=best_confidence,
                 is_existing_profile=True
             )
 
@@ -972,6 +1017,10 @@ class FacialRecognitionService:
                 profile["id"]: profile for profile in profiles
             }
             logger.info(f"Loaded {len(profile_encodings)} profiles for matching")
+            if profile_encodings:
+                logger.info(f"🔍 Profile IDs available for matching: {list(profile_encodings.keys())}")
+            else:
+                logger.warning("⚠️ No profiles with face encodings found - cannot perform facial recognition")
 
             # Step 2: Split video into 5-second chunks
             logger.info(f"Downloading and chunking video from {video_url}")
@@ -983,7 +1032,8 @@ class FacialRecognitionService:
             profile_face_images = defaultdict(list)  # profile_id -> [face_images]
 
             for chunk_id, chunk_data, chunk_index, start_time, end_time in chunks:
-                logger.info(f"Processing chunk {chunk_index + 1}/{len(chunks)}")
+                logger.info(f"\n🎬 Processing chunk {chunk_index + 1}/{len(chunks)} (Time: {start_time:.1f}s - {end_time:.1f}s)")
+                logger.info(f"📊 Searching against {len(profile_encodings)} profiles with face encodings")
 
                 # Detect all faces in this chunk
                 face_detections = self.face_processor.process_video_chunk_faces(chunk_data)
@@ -994,16 +1044,16 @@ class FacialRecognitionService:
                 # Process each unique face in the chunk
                 chunk_profile_ids = set()
 
-                for face_group in face_groups:
+                for face_group_index, face_group in enumerate(face_groups):
                     # Get the best detection from this group
                     best_detection = self.face_processor.get_best_detection_from_group(face_group)
 
                     # Extract face image as base64
                     face_b64 = self._extract_face_image(chunk_data, best_detection)
 
-                    # Try to match to existing profiles
-                    match_result = self.face_processor.match_face_to_profiles(
-                        best_detection.face_encoding, profile_encodings
+                    # Try to match to existing profiles with detailed confidence logging
+                    match_result = self.face_processor.match_face_to_profiles_with_detailed_scores(
+                        best_detection.face_encoding, profile_encodings, chunk_index, face_group_index
                     )
 
                     if match_result:
@@ -1015,22 +1065,14 @@ class FacialRecognitionService:
                         if face_b64:
                             profile_face_images[match_result.profile_id].append(face_b64)
 
-                        # Store detection for debugging
-                        self.supabase_client.store_chunk_detection(
-                            video_id=video_id,
-                            chunk_index=chunk_index,
-                            profile_id=match_result.profile_id,
-                            confidence=match_result.confidence,
-                            bbox={
-                                "top": int(best_detection.bbox[0]),
-                                "right": int(best_detection.bbox[1]),
-                                "bottom": int(best_detection.bbox[2]),
-                                "left": int(best_detection.bbox[3]),
-                            },
-                        )
-
                         # Add video to profile's video list
                         self.supabase_client.add_video_to_profile(match_result.profile_id, video_id)
+
+                # Log chunk summary
+                logger.info(f"\n📝 CHUNK {chunk_index} SUMMARY:")
+                logger.info(f"   👥 Detected {len(face_groups)} unique faces")
+                logger.info(f"   ✅ Matched {len(chunk_profile_ids)} profiles: {list(chunk_profile_ids)}")
+                logger.info(f"   ⏱️  Processing time: {start_time:.1f}s - {end_time:.1f}s\n")
 
                 chunk_results.append((chunk_index, list(chunk_profile_ids)))
 
