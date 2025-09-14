@@ -5,20 +5,162 @@ export interface GraphNode {
   x: number;
   y: number;
   isUser?: boolean;
-  isFriend?: boolean;
+  email?: string;
 }
 
 export interface GraphConnection {
   fromId: string;
   toId: string;
-  mutualMemories: number;
-  strength: number; // 0-1, calculated from mutual memories
+  interactions: number;
+  strength: number; // 0-1, calculated from interactions
+}
+
+export interface APIUser {
+  id: number;
+  name: string;
+  email: string;
+  profile_photo: string;
+  reference_image: string | null;
+  video_ids: number[];
+}
+
+export interface APIInteraction {
+  id: number;
+  interaction_count: number;
+  created_at: string;
+  updated_at: string;
+  user1: APIUser;
+  user2: APIUser;
 }
 
 export interface GraphData {
   nodes: GraphNode[];
   connections: GraphConnection[];
 }
+
+// Multi-dimensional scaling algorithm for 2D projection
+export const performMDS = (distanceMatrix: number[][], width: number, height: number): { x: number; y: number }[] => {
+  const n = distanceMatrix.length;
+  if (n === 0) return [];
+  
+  // Simple force-directed layout approach (easier than full MDS)
+  const positions = Array(n).fill(0).map(() => ({
+    x: Math.random() * width,
+    y: Math.random() * height
+  }));
+  
+  // Iterative force-based positioning
+  for (let iter = 0; iter < 200; iter++) {
+    const forces = positions.map(() => ({ x: 0, y: 0 }));
+    
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const dx = positions[j].x - positions[i].x;
+        const dy = positions[j].y - positions[i].y;
+        const distance = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const targetDistance = distanceMatrix[i][j] * 200; // Scale factor
+        
+        const force = (distance - targetDistance) * 0.01;
+        const fx = (dx / distance) * force;
+        const fy = (dy / distance) * force;
+        
+        forces[i].x += fx;
+        forces[i].y += fy;
+        forces[j].x -= fx;
+        forces[j].y -= fy;
+      }
+    }
+    
+    // Apply forces and keep within bounds
+    for (let i = 0; i < n; i++) {
+      positions[i].x = Math.max(80, Math.min(width - 80, positions[i].x - forces[i].x));
+      positions[i].y = Math.max(80, Math.min(height - 80, positions[i].y - forces[i].y));
+    }
+  }
+  
+  return positions;
+};
+
+// Convert API interactions to graph data with MDS positioning
+export const convertAPIDataToGraphData = (
+  interactions: APIInteraction[], 
+  currentUserId: number, 
+  width: number, 
+  height: number
+): GraphData => {
+  // Extract all unique users
+  const userMap = new Map<number, APIUser>();
+  interactions.forEach(interaction => {
+    userMap.set(interaction.user1.id, interaction.user1);
+    userMap.set(interaction.user2.id, interaction.user2);
+  });
+  
+  const users = Array.from(userMap.values());
+  const userIds = users.map(u => u.id);
+  const n = users.length;
+  
+  if (n === 0) {
+    return { nodes: [], connections: [] };
+  }
+  
+  // Create distance matrix (inverse of interactions)
+  const distanceMatrix: number[][] = Array(n).fill(0).map(() => Array(n).fill(0));
+  
+  // Initialize with high distance (low interaction)
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      if (i === j) {
+        distanceMatrix[i][j] = 0;
+      } else {
+        distanceMatrix[i][j] = 5; // High distance for no interaction
+      }
+    }
+  }
+  
+  // Fill in actual interactions
+  interactions.forEach(interaction => {
+    const idx1 = userIds.indexOf(interaction.user1.id);
+    const idx2 = userIds.indexOf(interaction.user2.id);
+    
+    if (idx1 !== -1 && idx2 !== -1) {
+      const interactionCount = interaction.interaction_count;
+      // Distance inversely proportional to interactions
+      const distance = Math.max(0.1, 1 / (interactionCount + 1));
+      distanceMatrix[idx1][idx2] = distance;
+      distanceMatrix[idx2][idx1] = distance;
+    }
+  });
+  
+  // Perform MDS to get 2D positions
+  const positions = performMDS(distanceMatrix, width, height);
+  
+  // Create nodes
+  const nodes: GraphNode[] = users.map((user, index) => ({
+    id: user.id.toString(),
+    name: user.name,
+    photo: `data:image/jpeg;base64,${user.profile_photo}`,
+    email: user.email,
+    x: positions[index]?.x || width / 2,
+    y: positions[index]?.y || height / 2,
+    isUser: user.id === currentUserId
+  }));
+  
+  // Create connections for all pairs with interactions > 0
+  const connections: GraphConnection[] = [];
+  const maxInteractions = Math.max(...interactions.map(i => i.interaction_count), 1);
+  
+  interactions.forEach(interaction => {
+    const strength = interaction.interaction_count / maxInteractions;
+    connections.push({
+      fromId: interaction.user1.id.toString(),
+      toId: interaction.user2.id.toString(),
+      interactions: interaction.interaction_count,
+      strength
+    });
+  });
+  
+  return { nodes, connections };
+};
 
 // Mock data generator
 export const generateMockGraphData = (userPhoto: string, userName: string, canvasWidth: number = 800, canvasHeight: number = 600): GraphData => {

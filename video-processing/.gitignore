@@ -25,6 +25,9 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Ruff
+.ruff_cache/
+
 # Virtual Environments
 .env
 .venv

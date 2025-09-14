@@ -116,7 +116,7 @@ export default function RetroVideoPlayer({
       {/* Title bar */}
       <div className="bg-blue-800 text-white px-2 py-1 text-xs flex items-center justify-between">
         <span>🎬 {video.query || 'Clip'}</span>
-        <div className="flex items-center gap-1">
+        {/* <div className="flex items-center gap-1">
           {onToggleFavorite && (
             <button
               onClick={() => onToggleFavorite(video)}
@@ -135,7 +135,7 @@ export default function RetroVideoPlayer({
               ✕
             </button>
           )}
-        </div>
+        </div> */}
       </div>
 
       {/* Video container */}
@@ -147,14 +147,26 @@ export default function RetroVideoPlayer({
           boxShadow: 'inset 1px 1px 0 gray'
         }}
       >
-        <video
-          ref={videoRef}
-          src={video.url}
-          width={width}
-          height={height}
-          className="w-full h-full object-contain"
-          style={{ imageRendering: 'pixelated' }}
-        />
+        {video.url.includes('youtube.com/embed') ? (
+          <iframe
+            src={video.url}
+            width={width}
+            height={height}
+            className="w-full h-full"
+            style={{ border: 'none' }}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        ) : (
+          <video
+            ref={videoRef}
+            src={video.url}
+            width={width}
+            height={height}
+            className="w-full h-full object-contain"
+            style={{ imageRendering: 'pixelated' }}
+          />
+        )}
       </div>
 
       {/* Controls */}

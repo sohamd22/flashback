@@ -15,6 +15,7 @@ interface WindowProps {
   children: ReactNode;
   onMouseDown: (e: React.MouseEvent) => void;
   onClose: () => void;
+  onBringToFront?: () => void;
 }
 
 export default function Window({
@@ -28,7 +29,8 @@ export default function Window({
   zIndex,
   children,
   onMouseDown,
-  onClose
+  onClose,
+  onBringToFront
 }: WindowProps) {
   return (
     <div
@@ -55,6 +57,7 @@ export default function Window({
           height: `${height - 40}px`,
           boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.2)'
         }}
+        onClick={onBringToFront}
       >
         {children}
       </div>

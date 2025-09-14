@@ -1,5 +1,5 @@
 {
-  "name": "mentraos-streamer-app",
+  "name": "mentraos-photo-taker-example-app",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -8,18 +8,19 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
-  "license": "MIT",
-  "description": "",
+  "license": "ISC",
+  "description": "Example app for taking photos with MentraOS",
   "dependencies": {
-    "@mentra/sdk": "^2.1.21",
+    "@mentra/sdk": "latest",
     "ejs": "^3.1.10",
     "express": "^4.21.2",
     "ws": "^8.18.1"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
+    "@types/ejs": "^3.1.5",
     "@types/express": "^5.0.1",
     "@types/node": "^22.13.14",
-    "@types/ws": "^8.18.0"
+    "@types/ws": "^8.18.0",
+    "typescript": "^5.0.0"
   }
 }
