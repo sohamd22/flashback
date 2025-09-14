@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { GraphData, GraphNode, GraphConnection } from '@/types/graph';
+import { GraphData, GraphNode } from '@/types/graph';
 import UserNode from '@/components/nodes/UserNode';
 import FriendNode from '@/components/nodes/FriendNode';
-import GraphConnectionComponent from '@/components/connections/GraphConnection';
 
 interface OSGraphCanvasProps {
   data: GraphData;
@@ -175,24 +174,6 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
     animationRef.current = requestAnimationFrame(animate);
   };
 
-  const renderConnection = (connection: GraphConnection) => {
-    const fromNode = nodes.find(n => n.id === connection.fromId);
-    const toNode = nodes.find(n => n.id === connection.toId);
-    
-    if (!fromNode || !toNode) return null;
-    
-    return (
-      <div key={`${connection.fromId}-${connection.toId}`} style={{ zIndex: 1 }}>
-        <GraphConnectionComponent
-          from={{ x: fromNode.x, y: fromNode.y }}
-          to={{ x: toNode.x, y: toNode.y }}
-          strength={connection.strength}
-          canvasWidth={width}
-          canvasHeight={height}
-        />
-      </div>
-    );
-  };
 
   const renderNode = (node: GraphNode) => {
     const isDragging = dragState.nodeId === node.id;
@@ -209,7 +190,7 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
             x={node.x}
             y={node.y}
             isHovered={isHovered}
-            showLabel={false} // Disable label popup
+            showLabel={isHovered}
             onClick={onUserClick}
             onMouseEnter={() => !dragState.isDragging && setHoveredNode(node.id)}
             onMouseLeave={() => !dragState.isDragging && setHoveredNode(null)}
@@ -226,7 +207,7 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
           x={node.x}
           y={node.y}
           isDragging={isDragging}
-          isHovered={false} // Disable hover popup
+          isHovered={isHovered}
           onClick={() => {
             if (!dragState.isDragging && onFriendClick) {
               onFriendClick(node.id);
@@ -261,74 +242,199 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
 
   return (
     <div 
-      className="relative"
+      className="relative bg-gray-100"
       style={{ width, height }}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
-      {/* Starry background */}
-      <div className="absolute inset-0 opacity-20">
-        <div className="w-full h-full" style={{
-          backgroundImage: `
-            radial-gradient(2px 2px at 20px 30px, #eee, transparent),
-            radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.8), transparent),
-            radial-gradient(1px 1px at 90px 40px, #fff, transparent),
-            radial-gradient(1px 1px at 130px 80px, rgba(255,255,255,0.6), transparent),
-            radial-gradient(2px 2px at 160px 30px, #eee, transparent),
-            radial-gradient(1px 1px at 200px 60px, rgba(255,255,255,0.8), transparent),
-            radial-gradient(1px 1px at 250px 20px, #fff, transparent),
-            radial-gradient(2px 2px at 280px 90px, rgba(255,255,255,0.6), transparent),
-            radial-gradient(1px 1px at 320px 50px, #eee, transparent),
-            radial-gradient(1px 1px at 360px 10px, rgba(255,255,255,0.8), transparent)
+      {/* Pixelated sky background with sun and clouds */}
+      <div 
+        className="absolute inset-0"
+        style={{
+          background: 'linear-gradient(180deg, #87ceeb 0%, #e0f6ff 40%, #ffffff 100%)',
+          zIndex: 0
+        }}
+      />
+      
+      {/* Pixelated sun */}
+      <div 
+        className="absolute"
+        style={{
+          top: '120px',
+          right: '60px',
+          width: '60px',
+          height: '60px',
+          background: `
+            radial-gradient(4px 4px at 8px 8px, #ffd700, transparent),
+            radial-gradient(4px 4px at 16px 8px, #ffd700, transparent),
+            radial-gradient(4px 4px at 24px 8px, #ffd700, transparent),
+            radial-gradient(4px 4px at 32px 8px, #ffd700, transparent),
+            radial-gradient(4px 4px at 40px 8px, #ffd700, transparent),
+            radial-gradient(4px 4px at 48px 8px, #ffd700, transparent),
+            radial-gradient(4px 4px at 8px 16px, #ffd700, transparent),
+            radial-gradient(4px 4px at 48px 16px, #ffd700, transparent),
+            radial-gradient(4px 4px at 8px 24px, #ffd700, transparent),
+            radial-gradient(4px 4px at 48px 24px, #ffd700, transparent),
+            radial-gradient(4px 4px at 8px 32px, #ffd700, transparent),
+            radial-gradient(4px 4px at 48px 32px, #ffd700, transparent),
+            radial-gradient(4px 4px at 8px 40px, #ffd700, transparent),
+            radial-gradient(4px 4px at 48px 40px, #ffd700, transparent),
+            radial-gradient(4px 4px at 16px 48px, #ffd700, transparent),
+            radial-gradient(4px 4px at 24px 48px, #ffd700, transparent),
+            radial-gradient(4px 4px at 32px 48px, #ffd700, transparent),
+            radial-gradient(4px 4px at 40px 48px, #ffd700, transparent),
+            radial-gradient(8px 8px at 16px 16px, #ffed4e, transparent),
+            radial-gradient(8px 8px at 32px 16px, #ffed4e, transparent),
+            radial-gradient(8px 8px at 16px 32px, #ffed4e, transparent),
+            radial-gradient(8px 8px at 32px 32px, #ffed4e, transparent),
+            #ffd700
           `,
-          backgroundRepeat: 'repeat',
-          backgroundSize: '400px 100px'
-        }} />
-      </div>
+          backgroundSize: '4px 4px',
+          imageRendering: 'pixelated',
+          animation: 'sunGlow 3s ease-in-out infinite alternate',
+          zIndex: 1
+        }}
+      />
+      
+      {/* Pixelated clouds */}
+      <div 
+        className="absolute"
+        style={{
+          top: '100px',
+          left: '100px',
+          width: '80px',
+          height: '40px',
+          background: `
+            radial-gradient(4px 4px at 16px 16px, #ffffff, transparent),
+            radial-gradient(4px 4px at 24px 16px, #ffffff, transparent),
+            radial-gradient(4px 4px at 32px 16px, #ffffff, transparent),
+            radial-gradient(4px 4px at 40px 16px, #ffffff, transparent),
+            radial-gradient(4px 4px at 48px 16px, #ffffff, transparent),
+            radial-gradient(4px 4px at 56px 16px, #ffffff, transparent),
+            radial-gradient(4px 4px at 12px 24px, #ffffff, transparent),
+            radial-gradient(4px 4px at 60px 24px, #ffffff, transparent),
+            radial-gradient(4px 4px at 8px 32px, #ffffff, transparent),
+            radial-gradient(4px 4px at 64px 32px, #ffffff, transparent),
+            radial-gradient(6px 6px at 20px 20px, #f8f9fa, transparent),
+            radial-gradient(6px 6px at 36px 20px, #f8f9fa, transparent),
+            radial-gradient(6px 6px at 52px 20px, #f8f9fa, transparent),
+            rgba(255, 255, 255, 0.9)
+          `,
+          backgroundSize: '4px 4px',
+          imageRendering: 'pixelated',
+          animation: 'cloudFloat 20s ease-in-out infinite',
+          zIndex: 1
+        }}
+      />
+      
+      <div 
+        className="absolute"
+        style={{
+          top: '140px',
+          right: '300px',
+          width: '60px',
+          height: '30px',
+          background: `
+            radial-gradient(4px 4px at 12px 12px, #ffffff, transparent),
+            radial-gradient(4px 4px at 20px 12px, #ffffff, transparent),
+            radial-gradient(4px 4px at 28px 12px, #ffffff, transparent),
+            radial-gradient(4px 4px at 36px 12px, #ffffff, transparent),
+            radial-gradient(4px 4px at 44px 12px, #ffffff, transparent),
+            radial-gradient(4px 4px at 8px 20px, #ffffff, transparent),
+            radial-gradient(4px 4px at 48px 20px, #ffffff, transparent),
+            radial-gradient(6px 6px at 18px 16px, #f8f9fa, transparent),
+            radial-gradient(6px 6px at 30px 16px, #f8f9fa, transparent),
+            radial-gradient(6px 6px at 42px 16px, #f8f9fa, transparent),
+            rgba(255, 255, 255, 0.8)
+          `,
+          backgroundSize: '4px 4px',
+          imageRendering: 'pixelated',
+          animation: 'cloudFloat 25s ease-in-out infinite reverse',
+          zIndex: 1
+        }}
+      />
+      
+      <style jsx>{`
+        @keyframes sunGlow {
+          0% { filter: brightness(1) drop-shadow(0 0 10px #ffd700); }
+          100% { filter: brightness(1.1) drop-shadow(0 0 20px #ffd700); }
+        }
+        
+        @keyframes cloudFloat {
+          0%, 100% { transform: translateX(0px); }
+          50% { transform: translateX(30px); }
+        }
+      `}</style>
 
-      {data.connections.map(connection => renderConnection(connection))}
+      {/* Simple connection lines */}
+      {data.connections.map(connection => {
+        const fromNode = nodes.find(n => n.id === connection.fromId);
+        const toNode = nodes.find(n => n.id === connection.toId);
+        
+        if (!fromNode || !toNode) return null;
+        
+        const opacity = Math.min(0.5, Math.max(0.2, (connection.strength || 0) / 10));
+        
+        return (
+          <svg
+            key={`${connection.fromId}-${connection.toId}`}
+            className="absolute pointer-events-none"
+            style={{ 
+              left: 0, 
+              top: 0, 
+              width: width, 
+              height: height, 
+              zIndex: 1 
+            }}
+          >
+            <line
+              x1={fromNode.x}
+              y1={fromNode.y}
+              x2={toNode.x}
+              y2={toNode.y}
+              stroke="#9ca3af"
+              strokeWidth="2"
+              opacity={opacity}
+            />
+          </svg>
+        );
+      })}
+      
       {nodes.map(node => renderNode(node))}
       
-      {/* Legend - positioned in bottom right */}
+      {/* Simple pixelated legend */}
       <div 
-        className="absolute bottom-4 right-4 bg-gray-300 border-4 border-gray-800 p-3 z-20"
+        className="absolute bottom-4 right-4 bg-white border-4 border-gray-600 p-3 z-20"
         style={{
-          boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.5), inset 2px 2px 0px rgba(255,255,255,0.8), 4px 4px 0px rgba(0,0,0,0.3)',
           fontFamily: 'monospace',
-          fontSize: '11px'
+          fontSize: '11px',
+          imageRendering: 'pixelated',
+          boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,1), 4px 4px 0px rgba(0,0,0,0.2)'
         }}
       >
-        <h4 className="text-xs font-bold mb-2 text-black">CONNECTION STRENGTH</h4>
-        <div className="space-y-1">
+        <div className="text-xs font-bold mb-2 text-gray-800">CONNECTIONS</div>
+        <div className="space-y-2">
           <div className="flex items-center gap-2">
             <div 
-              className="w-3 h-3 border border-gray-600"
+              className="w-4 h-4 border-2 border-gray-400"
               style={{ 
-                backgroundColor: 'rgba(156, 163, 175, 0.4)',
-                boxShadow: 'inset 1px 1px 0px rgba(0,0,0,0.2)'
+                backgroundColor: 'rgba(156, 163, 175, 0.2)',
+                imageRendering: 'pixelated',
+                boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,0.8)'
               }}
             />
-            <span className="text-black font-bold text-xs">FEW MEMORIES</span>
+            <span className="text-gray-800 font-bold text-xs">FEW MEMORIES</span>
           </div>
           <div className="flex items-center gap-2">
             <div 
-              className="w-3 h-3 border border-gray-600"
+              className="w-4 h-4 border-2 border-gray-400"
               style={{ 
-                backgroundColor: 'rgba(156, 163, 175, 0.6)',
-                boxShadow: 'inset 1px 1px 0px rgba(0,0,0,0.2)'
+                backgroundColor: 'rgba(156, 163, 175, 0.5)',
+                imageRendering: 'pixelated',
+                boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,0.8)'
               }}
             />
-            <span className="text-black font-bold text-xs">SOME MEMORIES</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div 
-              className="w-3 h-3 border border-gray-600"
-              style={{ 
-                backgroundColor: 'rgba(156, 163, 175, 0.8)',
-                boxShadow: 'inset 1px 1px 0px rgba(0,0,0,0.2)'
-              }}
-            />
-            <span className="text-black font-bold text-xs">MANY MEMORIES</span>
+            <span className="text-gray-800 font-bold text-xs">MANY MEMORIES</span>
           </div>
         </div>
       </div>

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { generateMockGraphData } from '@/types/graph';
-import PersonalPage from '@/components/PersonalPage';
+import FileExplorer from '@/components/FileExplorer';
 
 import Desktop from './os/Desktop';
 import DesktopIcon from './os/DesktopIcon';
@@ -40,7 +40,7 @@ function useWindowManager() {
   const [windows, setWindows] = useState<WindowState[]>([]);
   const [draggedWindow, setDraggedWindow] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [nextZIndex, setNextZIndex] = useState(1);
+  const [nextZIndex, setNextZIndex] = useState(1000); // Start with high z-index
 
   const openWindow = (title: string, content: React.ReactNode, icon: string) => {
     const windowWidth = typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200;
@@ -117,7 +117,7 @@ function useWindowManager() {
 }
 
 // App components
-function PersonalApp({ width, height }: { width: number; height: number }) {
+function VideosApp({ width, height, windowManager }: { width: number; height: number; windowManager: any }) {
   const { profile } = useAuth();
   
   if (!profile) {
@@ -125,19 +125,18 @@ function PersonalApp({ width, height }: { width: number; height: number }) {
       <div className="h-full flex items-center justify-center bg-black text-white">
         <div className="text-center" style={{ fontFamily: 'monospace' }}>
           <div className="text-green-400 mb-2">LOADING...</div>
-          <div className="text-xs">INITIALIZING PERSONAL MEMORY SYSTEM</div>
+          <div className="text-xs">INITIALIZING FILE SYSTEM</div>
         </div>
       </div>
     );
   }
   
   return (
-    <div className="h-full bg-black">
-      <PersonalPage
-        user={profile}
-        onBack={() => {}}
+    <div className="h-full">
+      <FileExplorer
         width={width}
         height={height}
+        onOpenGraphWindow={windowManager.openWindow}
       />
     </div>
   );
@@ -174,6 +173,13 @@ function ContactsApp({ width, height }: { width: number; height: number }) {
   );
 }
 
+function TrashApp({ width, height, windowManager }: { width: number; height: number; windowManager: any }) {
+  return (
+    <div className="h-full">
+    </div>
+  );
+}
+
 // Main component
 export default function OSPage() {
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -197,8 +203,8 @@ export default function OSPage() {
         const windowWidth = typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200;
         const windowHeight = typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800;
         windowManager.openWindow(
-          profile?.name ? `${profile.name}'s Personal Space` : 'Personal Memories',
-          <PersonalApp width={windowWidth - 20} height={windowHeight - 60} />,
+          profile?.name ? `${profile.name}'s Videos` : 'Videos',
+          <VideosApp width={windowWidth - 20} height={windowHeight - 60} windowManager={windowManager} />,
           "/icons/folder.png"
         );
       }
@@ -219,6 +225,22 @@ export default function OSPage() {
         );
       }
     },
+    {
+      id: 'trash',
+      name: 'Trash',
+      icon: "/icons/trash.png",
+      x: 1366,
+      y: 748,
+      onDoubleClick: () => {
+        const windowWidth = typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200;
+        const windowHeight = typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800;
+        windowManager.openWindow(
+          'Trash',
+          <TrashApp width={windowWidth - 20} height={windowHeight - 60} windowManager={windowManager} />,
+          "/icons/trash.png"
+        );
+      }
+    }
   ];
 
   return (
