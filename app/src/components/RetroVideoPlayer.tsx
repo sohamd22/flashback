@@ -116,26 +116,6 @@ export default function RetroVideoPlayer({
       {/* Title bar */}
       <div className="bg-blue-800 text-white px-2 py-1 text-xs flex items-center justify-between">
         <span>🎬 {video.query || 'Clip'}</span>
-        <div className="flex items-center gap-1">
-          {onToggleFavorite && (
-            <button
-              onClick={() => onToggleFavorite(video)}
-              className="px-1 py-0 bg-gray-200 text-black border border-gray-400 hover:bg-gray-300"
-              style={{ boxShadow: 'inset 1px 1px 0 white, inset -1px -1px 0 gray' }}
-            >
-              {isFavorite ? '⭐' : '☆'}
-            </button>
-          )}
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="px-2 py-0 bg-red-500 text-white border border-red-600 hover:bg-red-600"
-              style={{ boxShadow: 'inset 1px 1px 0 white, inset -1px -1px 0 #800' }}
-            >
-              ✕
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Video container */}
