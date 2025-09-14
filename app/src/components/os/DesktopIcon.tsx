@@ -7,9 +7,10 @@ interface DesktopIconProps {
   x: number;
   y: number;
   onDoubleClick: () => void;
+  badgeCount?: number;
 }
 
-export default function DesktopIcon({ id, name, icon, x, y, onDoubleClick }: DesktopIconProps) {
+export default function DesktopIcon({ id, name, icon, x, y, onDoubleClick, badgeCount }: DesktopIconProps) {
   return (
     <div
       key={id}
@@ -26,7 +27,23 @@ export default function DesktopIcon({ id, name, icon, x, y, onDoubleClick }: Des
       <div className="flex flex-col items-center gap-1 w-full" style={{ 
         minHeight: '90px'
       }}>
-        <img src={icon} alt={name} className="w-16 h-16 object-cover" />
+        <div className="relative">
+          <img src={icon} alt={name} className="w-16 h-16 object-cover" />
+          {badgeCount && badgeCount > 0 && (
+            <div 
+              className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center"
+              style={{
+                minWidth: '20px',
+                height: '20px',
+                fontSize: '10px',
+                fontFamily: 'Pixelify Sans',
+                imageRendering: 'pixelated'
+              }}
+            >
+              {badgeCount > 99 ? '99+' : badgeCount}
+            </div>
+          )}
+        </div>
         <span className="text-white text-sm font-bold text-center leading-tight w-full" style={{ 
           fontFamily: 'monospace',
           wordWrap: 'break-word',
