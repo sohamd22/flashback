@@ -95,8 +95,8 @@ curl -X POST "https://your-modal-app-url/analyze-video" \
 curl -X POST "https://aryankeluskar--facial-recognition-api-fastapi-app.modal.run/analyze-video" \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "user123",
-    "video_url": "https://storage.googleapis.com/hack-bucket25/test-user-123/8c3afd4a-4594-42b2-b609-d6f474778950/0002_c3ebc913-cca8-452b-8d73-617e01a8f6a2.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=GOOG1EQS5VUGHWOQV7H2DCBO44NK5M6DJ5TEV5Q6WAQPD4MFBX5QIIMCPM36A%2F20250913%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20250913T232743Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=ecdaeddab93c3d819b4a9a8172c80a79c9b4cd9d14568ff9a46e748058ff5545"
+    "requester_user_id": "baf23287-7a8a-45ff-8d6f-2fce87c88d5f",
+    "video_url": "https://storage.googleapis.com/hack-bucket25/test-user-123/8c3afd4a-4594-42b2-b609-d6f474778950/0001_8c5e92bb-4546-4776-90ec-b05fbbdb2c64.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=GOOG1EQS5VUGHWOQV7H2DCBO44NK5M6DJ5TEV5Q6WAQPD4MFBX5QIIMCPM36A%2F20250914%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20250914T020141Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=e605fc53a5c0ab3348a0d35fe417868503f075bead844f567b5ed15a5a7a31ac"
   }'
 ```
 

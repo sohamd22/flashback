@@ -147,31 +147,31 @@ class SupabaseClient:
             logger.error(f"Error updating profile face data: {str(e)}")
             raise
 
-    def get_all_profiles_with_face_data(self) -> List[Dict]:
-        """Get all profiles that have face encodings"""
+    def get_all_profiles_with_photos(self) -> List[Dict]:
+        """Get all profiles that have profile photos"""
         try:
             result = (
                 self.client.table("profiles")
-                .select("id, name, email, face_encoding, reference_image, video_ids")
-                .not_("face_encoding", "is", "null")
+                .select("id, name, email, face_encoding, reference_image, video_ids, profile_photo")
+                .not_("profile_photo", "is", "null")
                 .execute()
             )
 
             profiles = []
             for profile in result.data:
+                # If face encoding exists, deserialize it
                 if profile.get("face_encoding"):
-                    # Deserialize face encoding from base64
                     encoding_b64 = profile["face_encoding"]
                     encoding_bytes = base64.b64decode(encoding_b64.encode('utf-8'))
                     face_encoding = pickle.loads(encoding_bytes)
                     profile["face_encoding"] = face_encoding
-                    profiles.append(profile)
+                profiles.append(profile)
 
-            logger.info(f"Retrieved {len(profiles)} profiles with face data")
+            logger.info(f"Retrieved {len(profiles)} profiles with photos")
             return profiles
 
         except Exception as e:
-            logger.error(f"Error retrieving profiles with face data: {str(e)}")
+            logger.error(f"Error retrieving profiles with photos: {str(e)}")
             raise
 
     def get_profiles_by_ids(self, profile_ids: List[str]) -> List[Dict]:
@@ -179,15 +179,15 @@ class SupabaseClient:
         try:
             result = (
                 self.client.table("profiles")
-                .select("id, name, email, face_encoding, reference_image, video_ids")
+                .select("id, name, email, face_encoding, reference_image, video_ids, profile_photo")
                 .in_("id", profile_ids)
                 .execute()
             )
 
             profiles = []
             for profile in result.data:
+                # If face encoding exists, deserialize it
                 if profile.get("face_encoding"):
-                    # Deserialize face encoding from base64
                     encoding_b64 = profile["face_encoding"]
                     encoding_bytes = base64.b64decode(encoding_b64.encode('utf-8'))
                     face_encoding = pickle.loads(encoding_bytes)
@@ -785,12 +785,33 @@ class FacialRecognitionService:
                 logger.info(f"Loading {len(target_profile_ids)} specific profiles")
                 profiles = self.supabase_client.get_profiles_by_ids(target_profile_ids)
             else:
-                logger.info("Loading all profiles with face data")
-                profiles = self.supabase_client.get_all_profiles_with_face_data()
+                logger.info("Loading all profiles with photos")
+                profiles = self.supabase_client.get_all_profiles_with_photos()
 
-            profile_encodings = {
-                profile["id"]: profile["face_encoding"] for profile in profiles
-            }
+            # Generate face encodings for profiles that have photos but no encodings
+            profile_encodings = {}
+            for profile in profiles:
+                if profile.get("face_encoding"):
+                    profile_encodings[profile["id"]] = profile["face_encoding"]
+                elif profile.get("profile_photo"):
+                    try:
+                        # Generate face encoding from profile photo
+                        logger.info(f"Generating face encoding for profile {profile['id']} from profile photo")
+                        image_data = self.download_image_from_url(profile["profile_photo"])
+                        face_encoding = self.face_processor.create_face_encoding_from_image(image_data)
+
+                        # Store the generated encoding in database
+                        self.supabase_client.upsert_profile_face_data(
+                            profile_id=profile["id"],
+                            face_encoding=face_encoding
+                        )
+
+                        profile_encodings[profile["id"]] = face_encoding
+                        profile["face_encoding"] = face_encoding
+
+                    except Exception as e:
+                        logger.warning(f"Failed to generate face encoding for profile {profile['id']}: {str(e)}")
+                        continue
             profile_info = {
                 profile["id"]: profile for profile in profiles
             }
@@ -1099,30 +1120,19 @@ def fastapi_app():
             logger.error(f"Error retrieving analysis: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @web_app.get("/profiles", response_model=ListProfilesResponse)
+    @web_app.get("/profiles")
     async def list_profiles():
-        """List all profiles in the system with face data summary"""
+        """List all profiles from Supabase"""
         try:
-            profiles_data = supabase_client.get_all_profiles_with_face_data()
+            url = "https://ndojkhkubndmfdgifnhy.supabase.co/rest/v1/profiles_images?select=id%2Cname%2Cemail%2Cprofile_photo&apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kb2praGt1Ym5kbWZkZ2lmbmh5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Nzc5NzkyNiwiZXhwIjoyMDczMzczOTI2fQ.ham5FFwZThvvJM0aLzqgoUiCoT7h2bkOI3gmu5YBZtU"
 
-            profiles = []
-            for profile_data in profiles_data:
-                profiles.append(ProfileSummary(
-                    id=profile_data["id"],
-                    name=profile_data.get("name"),
-                    email=profile_data.get("email", ""),
-                    has_face_data=bool(profile_data.get("face_encoding")),
-                    video_count=len(profile_data.get("video_ids", [])),
-                ))
+            response = requests.get(url)
+            response.raise_for_status()
 
-            return ListProfilesResponse(
-                total_profiles=len(profiles),
-                profiles_with_face_data=len([p for p in profiles if p.has_face_data]),
-                profiles=profiles,
-            )
+            return response.json()
 
         except Exception as e:
-            logger.error(f"Error listing profiles: {str(e)}")
+            logger.error(f"Error fetching profiles: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
     @web_app.post("/profile/{profile_id}/add-face-data")
