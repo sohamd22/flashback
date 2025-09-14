@@ -29,56 +29,32 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
   });
   const animationRef = useRef<number>(0);
 
-  // Center and scale nodes to fit the window
+  // Use positions from data (already optimized by MDS algorithm)
   useEffect(() => {
     if (!data.nodes.length) return;
+    setNodes([...data.nodes]);
+  }, [data]);
 
-    const centerX = width / 2;
-    const centerY = height / 2;
-    
-    // Find user node
-    const userNode = data.nodes.find(n => n.isUser);
-    if (!userNode) return;
-
-    // Scale factor to fit nicely in window
-    const scale = Math.min(width / 1000, height / 700, 1);
-
-    const centeredNodes = data.nodes.map(node => {
-      if (node.isUser) {
-        return { ...node, x: centerX, y: centerY };
-      }
-      
-      // Scale and center friend nodes relative to user
-      const offsetX = (node.x - userNode.x) * scale;
-      const offsetY = (node.y - userNode.y) * scale;
-      
-      return {
-        ...node,
-        x: centerX + offsetX,
-        y: centerY + offsetY
-      };
-    });
-
-    setNodes(centeredNodes);
-  }, [data, width, height]);
-
-  // Apply grayscale based on mutual memories
+  // Apply grayscale based on interactions with current user
   const getNodeStyle = (node: GraphNode) => {
     if (node.isUser) return {};
     
+    const currentUserId = data.nodes.find(n => n.isUser)?.id;
+    if (!currentUserId) return {};
+    
     const connection = data.connections.find(c => 
-      (c.fromId === 'user' && c.toId === node.id) ||
-      (c.fromId === node.id && c.toId === 'user')
+      (c.fromId === currentUserId && c.toId === node.id) ||
+      (c.fromId === node.id && c.toId === currentUserId)
     );
     
-    if (!connection) return {};
+    if (!connection) return { filter: 'grayscale(0.8)' };
     
-    // Find max mutual memories for normalization
-    const maxMemories = Math.max(...data.connections.map(c => c.mutualMemories || 0));
-    const normalizedMemories = (connection.mutualMemories || 0) / maxMemories;
+    // Find max interactions for normalization
+    const maxInteractions = Math.max(...data.connections.map(c => c.interactions || 0));
+    const normalizedInteractions = (connection.interactions || 0) / maxInteractions;
     
-    // Grayscale inversely proportional to memories (0-0.875)
-    const grayscale = 0.875 - (normalizedMemories * 0.875);
+    // Grayscale inversely proportional to interactions (0-0.8)
+    const grayscale = 0.8 - (normalizedInteractions * 0.6);
     
     return {
       filter: `grayscale(${grayscale})`,
@@ -108,25 +84,10 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
 
     const currentNode = nodes.find(n => n.id === dragState.nodeId);
     if (currentNode) {
-      // Animate back to original position
+      // Animate back to original MDS position
       const originalNode = data.nodes.find(n => n.id === dragState.nodeId);
       if (originalNode) {
-        const centerX = width / 2;
-        const centerY = height / 2;
-        const userNode = data.nodes.find(n => n.isUser);
-        const scale = Math.min(width / 1000, height / 700, 1);
-        
-        let targetX = centerX;
-        let targetY = centerY;
-        
-        if (!currentNode.isUser && userNode) {
-          const offsetX = (originalNode.x - userNode.x) * scale;
-          const offsetY = (originalNode.y - userNode.y) * scale;
-          targetX = centerX + offsetX;
-          targetY = centerY + offsetY;
-        }
-        
-        animateNodeBack(dragState.nodeId, { x: currentNode.x, y: currentNode.y }, { x: targetX, y: targetY });
+        animateNodeBack(dragState.nodeId, { x: currentNode.x, y: currentNode.y }, { x: originalNode.x, y: originalNode.y });
       }
     }
 
@@ -301,73 +262,12 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
       `}</style>
 
       
-      {/* Clean pixelated user node in center */}
-      <div
-        className="absolute transform -translate-x-1/2 -translate-y-1/2"
-        style={{ 
-          left: width / 2, 
-          top: height / 2,
-          zIndex: 10 
-        }}
-      >
-        <div 
-          className="w-20 h-20 border-4 border-gray-600 bg-white flex items-center justify-center cursor-pointer hover:scale-105 transition-transform"
-          style={{
-            imageRendering: 'pixelated',
-            boxShadow: 'inset -3px -3px 0px rgba(0,0,0,0.3), inset 3px 3px 0px rgba(255,255,255,1), 6px 6px 0px rgba(0,0,0,0.2)'
-          }}
-          onClick={onUserClick}
-        >
-          <img 
-            src={data.nodes.find(n => n.isUser)?.photo || '/icons/user.png'} 
-            alt={data.nodes.find(n => n.isUser)?.name || 'User'}
-            className="w-16 h-16"
-            style={{ imageRendering: 'pixelated' }}
-          />
-        </div>
-        <div 
-          className="text-center text-gray-800 text-xs mt-2 font-bold bg-white border-3 border-gray-600 px-2 py-1"
-          style={{
-            fontFamily: 'monospace',
-            imageRendering: 'pixelated',
-            boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,1)'
-          }}
-        >
-          {data.nodes.find(n => n.isUser)?.name || 'USER'}
-        </div>
-      </div>
-
-      {/* Simple connection lines */}
-      {nodes.filter(n => !n.isUser).map((node) => (
-        <svg
-          key={`connection-${node.id}`}
-          className="absolute pointer-events-none"
-          style={{ 
-            left: 0, 
-            top: 0, 
-            width: width, 
-            height: height, 
-            zIndex: 1
-          }}
-        >
-          <line
-            x1={width / 2}
-            y1={height / 2}
-            x2={node.x}
-            y2={node.y}
-            stroke="#9ca3af"
-            strokeWidth="2"
-            strokeDasharray="5,5"
-            opacity="0.3"
-          />
-        </svg>
-      ))}
-
-      {/* Friend nodes with video-style design */}
-      {nodes.filter(n => !n.isUser).map((node, index) => {
+      {/* All nodes including user with dynamic positioning */}
+      {nodes.map((node) => {
         const isDragging = dragState.nodeId === node.id;
         const isHovered = hoveredNode === node.id;
         const nodeStyle = getNodeStyle(node);
+        const isUser = node.isUser;
         
         return (
           <div
@@ -376,15 +276,19 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
             style={{ 
               left: node.x, 
               top: node.y,
-              zIndex: isDragging ? 20 : 5,
+              zIndex: isUser ? 15 : (isDragging ? 20 : 5),
               transform: isDragging ? 'translate(-50%, -50%) scale(1.1)' : 'translate(-50%, -50%) scale(1)',
               ...nodeStyle
             }}
             onClick={(e) => {
               e.stopPropagation();
               setTimeout(() => {
-                if (!dragState.isDragging && onFriendClick) {
-                  onFriendClick(node.id);
+                if (!dragState.isDragging) {
+                  if (isUser && onUserClick) {
+                    onUserClick();
+                  } else if (!isUser && onFriendClick) {
+                    onFriendClick(node.id);
+                  }
                 }
               }, 50);
             }}
@@ -411,20 +315,26 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
             onMouseEnter={() => !dragState.isDragging && setHoveredNode(node.id)}
             onMouseLeave={() => !dragState.isDragging && setHoveredNode(null)}
           >
-            {/* Clean pixelated friend node */}
+            {/* Node visual */}
             <div className="relative">
               <div 
-                className="w-16 h-16 border-4 border-green-600 flex items-center justify-center hover:scale-105 transition-transform overflow-hidden"
+                className={`${
+                  isUser ? 'w-20 h-20 border-4 border-gray-600 bg-white' : 'w-16 h-16 border-4 border-green-600'
+                } flex items-center justify-center hover:scale-105 transition-transform overflow-hidden`}
                 style={{
                   imageRendering: 'pixelated',
-                  boxShadow: 'inset -3px -3px 0px rgba(0,0,0,0.3), inset 3px 3px 0px rgba(255,255,255,0.8), 4px 4px 0px rgba(0,0,0,0.2)',
-                  background: 'linear-gradient(135deg, #dcfce7, #22c55e)'
+                  boxShadow: isUser 
+                    ? 'inset -3px -3px 0px rgba(0,0,0,0.3), inset 3px 3px 0px rgba(255,255,255,1), 6px 6px 0px rgba(0,0,0,0.2)'
+                    : 'inset -3px -3px 0px rgba(0,0,0,0.3), inset 3px 3px 0px rgba(255,255,255,0.8), 4px 4px 0px rgba(0,0,0,0.2)',
+                  background: isUser 
+                    ? 'linear-gradient(135deg, #f8fafc, #e2e8f0)'
+                    : 'linear-gradient(135deg, #dcfce7, #22c55e)'
                 }}
               >
                 <img 
-                  src={node.photo}
+                  src={node.photo || '/icons/user.png'}
                   alt={node.name}
-                  className="w-full h-full object-cover"
+                  className={isUser ? 'w-16 h-16' : 'w-full h-full object-cover'}
                   style={{ imageRendering: 'pixelated' }}
                   onError={(e) => {
                     const target = e.target as HTMLImageElement;
@@ -442,22 +352,67 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
               </div>
             </div>
             
-            {/* Clean info box */}
-            <div className="absolute top-18 left-1/2 transform -translate-x-1/2 text-center">
+            {/* Name label */}
+            <div className={`absolute ${isUser ? 'top-22' : 'top-18'} left-1/2 transform -translate-x-1/2 text-center`}>
               <div 
-                className="text-xs text-gray-800 font-bold whitespace-nowrap max-w-20 truncate bg-white border-2 border-gray-400 px-2 py-1"
+                className={`text-xs text-gray-800 font-bold whitespace-nowrap ${
+                  isUser ? 'max-w-24' : 'max-w-20'
+                } truncate bg-white border-2 border-gray-400 px-2 py-1`}
                 style={{
                   fontFamily: 'monospace',
                   imageRendering: 'pixelated',
                   boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,1)'
                 }}
               >
-                {node.name.split(' ')[0]}
+                {isUser ? (node.name || 'USER') : node.name.split(' ')[0]}
               </div>
             </div>
           </div>
         );
       })}
+
+      {/* Connection lines between all users */}
+      <svg
+        className="absolute pointer-events-none"
+        style={{ 
+          left: 0, 
+          top: 0, 
+          width: width, 
+          height: height, 
+          zIndex: 1
+        }}
+      >
+        {data.connections.map((connection, index) => {
+          const fromNode = nodes.find(n => n.id === connection.fromId);
+          const toNode = nodes.find(n => n.id === connection.toId);
+          
+          if (!fromNode || !toNode) return null;
+          
+          const isUserConnection = fromNode.isUser || toNode.isUser;
+          const strokeWidth = isUserConnection ? 3 : 1.5;
+          const opacity = isUserConnection ? 0.6 : 0.25;
+          const strokeColor = isUserConnection ? "#6b7280" : "#d1d5db";
+          const dashArray = isUserConnection ? "none" : "4,4";
+          
+          return (
+            <line
+              key={`connection-${connection.fromId}-${connection.toId}-${index}`}
+              x1={fromNode.x}
+              y1={fromNode.y}
+              x2={toNode.x}
+              y2={toNode.y}
+              stroke={strokeColor}
+              strokeWidth={strokeWidth}
+              strokeDasharray={dashArray}
+              opacity={opacity}
+              style={{
+                filter: `brightness(${0.8 + connection.strength * 0.4})`
+              }}
+            />
+          );
+        })}
+      </svg>
+
       
       {/* Simple legend */}
       <div 
@@ -493,7 +448,7 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
             >
               <span className="text-xs">👥</span>
             </div>
-            <span className="text-gray-800 font-bold text-xs">FRIENDS</span>
+            <span className="text-gray-800 font-bold text-xs">CONTACTS</span>
           </div>
         </div>
       </div>

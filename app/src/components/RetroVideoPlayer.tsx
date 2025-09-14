@@ -147,14 +147,26 @@ export default function RetroVideoPlayer({
           boxShadow: 'inset 1px 1px 0 gray'
         }}
       >
-        <video
-          ref={videoRef}
-          src={video.url}
-          width={width}
-          height={height}
-          className="w-full h-full object-contain"
-          style={{ imageRendering: 'pixelated' }}
-        />
+        {video.url.includes('youtube.com/embed') ? (
+          <iframe
+            src={video.url}
+            width={width}
+            height={height}
+            className="w-full h-full"
+            style={{ border: 'none' }}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        ) : (
+          <video
+            ref={videoRef}
+            src={video.url}
+            width={width}
+            height={height}
+            className="w-full h-full object-contain"
+            style={{ imageRendering: 'pixelated' }}
+          />
+        )}
       </div>
 
       {/* Controls */}
