@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { convertAPIDataToGraphData, APIInteraction } from '@/types/graph';
 import FileExplorer from '@/components/FileExplorer';
+import PhotosApp from '@/components/PhotosApp';
 
 import Desktop from './os/Desktop';
 import DesktopIcon from './os/DesktopIcon';
@@ -655,6 +656,20 @@ export default function OSPage() {
           profile?.name ? `${profile.name}'s Videos` : 'Videos',
           <VideosApp width={windowWidth - 20} height={windowHeight - 60} windowManager={windowManager} />,
           "/icons/folder.png"
+        );
+      }
+    },
+    {
+      id: 'photos',
+      name: 'Photos',
+      icon: "/icons/photo_logo.png",
+      onDoubleClick: () => {
+        const windowWidth = typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200;
+        const windowHeight = typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800;
+        windowManager.openWindow(
+          profile?.name ? `${profile.name}'s Photos` : 'Photos',
+          <PhotosApp width={windowWidth - 20} height={windowHeight - 60} windowManager={windowManager} />,
+          "/icons/photo_logo.png"
         );
       }
     },

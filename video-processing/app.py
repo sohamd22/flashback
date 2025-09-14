@@ -12,6 +12,7 @@ from services.vlm_service import VLMService
 from services.transcription_service import TranscriptionService
 from models.schemas import (
     ProcessVideoResponse,
+    ProcessPhotoResponse,
     RetrieveClipsRequest,
     RetrieveClipsResponse,
     ClipWithUrl,
@@ -84,6 +85,61 @@ def fastapi_app():
     video_processor = VideoProcessor()
     vlm_service = VLMService(api_key=os.environ["ANTHROPIC_API_KEY"])
     transcription_service = TranscriptionService(api_key=os.environ["OPENAI_API_KEY"])
+
+    @web_app.post("/process-photo", response_model=ProcessPhotoResponse)
+    async def process_photo(user_id: str = Form(...), photo: UploadFile = File(...)):
+        """Process and store a photo with AI-generated description"""
+        try:
+            # Read photo data
+            photo_data = await photo.read()
+            logger.info(
+                f"Processing photo for user {user_id}, size: {len(photo_data)} bytes"
+            )
+
+            # Generate photo ID
+            photo_id = str(uuid.uuid4())
+
+            # Generate description using VLM service
+            # VLM service expects video data but can process single images
+            description = vlm_service.generate_description(
+                video_chunk_data=photo_data,
+                chunk_index=0,
+                start_time=0,
+                end_time=0,
+                video_filename=photo.filename or "photo.jpg",
+                current_transcription="",
+                previous_transcription=None,
+            )
+
+            # Upload photo to GCS
+            storage_service.upload_video_chunk(
+                file_data=photo_data,
+                user_id=user_id,
+                video_id=photo_id,  # Use photo_id as video_id
+                chunk_id=photo_id,
+                chunk_index=0,
+            )
+
+            # Store metadata in Pinecone for searchability
+            vector_db_service.upsert_video_chunk(
+                chunk_id=photo_id,
+                user_id=user_id,
+                video_id=photo_id,
+                text=description,
+            )
+
+            logger.info(f"Successfully processed photo {photo_id} for user {user_id}")
+
+            return ProcessPhotoResponse(
+                photo_id=photo_id,
+                user_id=user_id,
+                description=description,
+                stored=True,
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing photo: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     @web_app.post("/process-video", response_model=ProcessVideoResponse)
     async def process_video(user_id: str = Form(...), video: UploadFile = File(...)):

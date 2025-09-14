@@ -109,7 +109,7 @@ class ExampleMentraOSApp extends AppServer {
    */
   private async cachePhoto(photo: PhotoData, _userId: string) {
     // Hardcode user ID for testing
-    const hardcodedUserId = 'test-user';
+    const hardcodedUserId = '432c3ab2-9b45-4fc0-9554-23df52f0962f';
 
     // create a new stored photo object which includes the photo data and the user id
     const cachedPhoto: StoredPhoto = {
@@ -122,8 +122,8 @@ class ExampleMentraOSApp extends AppServer {
       size: photo.size
     };
 
-    // Send photo to video processing endpoint as if it were a video
-    this.sendToVideoProcessing(cachedPhoto);
+    // Send photo to processing endpoint
+    this.sendToPhotoProcessing(cachedPhoto);
 
     // cache the photo for display
     this.photos.set(hardcodedUserId, cachedPhoto);
@@ -133,21 +133,21 @@ class ExampleMentraOSApp extends AppServer {
   }
 
   /**
-   * Send photo to video processing Modal endpoint
+   * Send photo to processing Modal endpoint
    */
-  private async sendToVideoProcessing(photo: StoredPhoto) {
+  private async sendToPhotoProcessing(photo: StoredPhoto) {
     try {
-      const MODAL_API_URL = 'https://jzflint--video-processing-api-fastapi-app.modal.run/process-video';
+      const MODAL_API_URL = 'https://jzflint--video-processing-api-fastapi-app.modal.run/process-photo';
 
       // Create FormData
       const formData = new FormData();
       formData.append('user_id', photo.userId);
 
-      // Convert buffer to Blob and append as video
-      const blob = new Blob([photo.buffer], { type: 'video/mp4' });
-      formData.append('video', blob, 'photo_as_video.mp4');
+      // Convert buffer to Blob and append as photo
+      const blob = new Blob([photo.buffer], { type: photo.mimeType || 'image/jpeg' });
+      formData.append('photo', blob, photo.filename || 'photo.jpg');
 
-      this.logger.info(`Sending photo to video processing endpoint for user ${photo.userId}`);
+      this.logger.info(`Sending photo to processing endpoint for user ${photo.userId}`);
 
       // Send to Modal endpoint
       const response = await fetch(MODAL_API_URL, {
@@ -156,21 +156,22 @@ class ExampleMentraOSApp extends AppServer {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
 
       const result = await response.json();
-      this.logger.info(`Video processing response:`, result);
+      this.logger.info(`Photo processing response:`, result);
 
       // Log the processing results
-      if (result.video_id) {
-        this.logger.info(`Video processed successfully with ID: ${result.video_id}`);
-        this.logger.info(`Chunks created: ${result.chunks_created}`);
-        this.logger.info(`Total duration: ${result.total_duration}s`);
+      if (result.photo_id) {
+        this.logger.info(`Photo processed successfully with ID: ${result.photo_id}`);
+        this.logger.info(`Description: ${result.description}`);
+        this.logger.info(`Stored: ${result.stored}`);
       }
 
     } catch (error) {
-      this.logger.error(`Error sending to video processing endpoint:`, error);
+      this.logger.error(`Error sending to photo processing endpoint:`, error);
     }
   }
 
@@ -207,7 +208,7 @@ class ExampleMentraOSApp extends AppServer {
     // API endpoint to get photo data
     app.get('/api/photo/:requestId', (req: any, res: any) => {
       // Use hardcoded user ID for testing
-      const userId = 'test-user';
+      const userId = '432c3ab2-9b45-4fc0-9554-23df52f0962f';
       const requestId = req.params.requestId;
 
       if (!userId) {

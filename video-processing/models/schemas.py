@@ -32,6 +32,13 @@ class RetrieveClipsResponse(BaseModel):
     clips: List[ClipWithUrl]
 
 
+class ProcessPhotoResponse(BaseModel):
+    photo_id: str
+    user_id: str
+    description: str
+    stored: bool
+
+
 class VideoChunkMetadata(BaseModel):
     chunk_id: str
     user_id: str
