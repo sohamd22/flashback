@@ -86,6 +86,13 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
           {/* Window Content */}
           <div className="p-8 bg-white">
             <div className="text-center mb-8">
+              {!isSignup && (
+                <img
+                  src="/icons/photo_logo.png"
+                  alt="Photographic Logo"
+                  className="w-20 h-20 mx-auto mb-4"
+                />
+              )}
               <h1 className="text-3xl font-bold text-gray-800 mb-2">
                 Photographic
               </h1>
