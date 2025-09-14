@@ -81,11 +81,3 @@ BEGIN
     ORDER BY i.interaction_count DESC, i.updated_at DESC;
 END;
 $$ LANGUAGE plpgsql;
-
--- Enable Row Level Security (optional)
--- ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE interactions ENABLE ROW LEVEL SECURITY;
-
--- Insert sample data (optional)
-INSERT INTO profiles (id, name, email) VALUES
-    ('baf23287-7a8a-45ff-8d6f-2fce87c88d5f', 'Test User', 'test@example.com');
