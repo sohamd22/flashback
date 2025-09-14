@@ -9,6 +9,7 @@ from services.storage import StorageService
 from services.vector_db import VectorDBService
 from services.video_processor import VideoProcessor
 from services.vlm_service import VLMService
+from services.transcription_service import TranscriptionService
 from models.schemas import (
     ProcessVideoResponse,
     RetrieveClipsRequest,
@@ -33,6 +34,7 @@ image = (
         "python-multipart",
         "numpy",
         "anthropic",
+        "openai",
     )
     .add_local_python_source("services")
     .add_local_python_source("models")
@@ -55,10 +57,15 @@ anthropic_secret = modal.Secret.from_name(
     required_keys=["ANTHROPIC_API_KEY"],
 )
 
+openai_secret = modal.Secret.from_name(
+    "openai-credentials",
+    required_keys=["OPENAI_API_KEY"],
+)
+
 
 @app.function(
     image=image,
-    secrets=[gcs_secret, pinecone_secret, anthropic_secret],
+    secrets=[gcs_secret, pinecone_secret, anthropic_secret, openai_secret],
     timeout=600,
     min_containers=1,
 )
@@ -76,6 +83,7 @@ def fastapi_app():
     )
     video_processor = VideoProcessor()
     vlm_service = VLMService(api_key=os.environ["ANTHROPIC_API_KEY"])
+    transcription_service = TranscriptionService(api_key=os.environ["OPENAI_API_KEY"])
 
     @web_app.post("/process-video", response_model=ProcessVideoResponse)
     async def process_video(user_id: str = Form(...), video: UploadFile = File(...)):
@@ -98,17 +106,33 @@ def fastapi_app():
             chunks = video_processor.split_video(video_data, video_id)
             chunk_ids = []
 
-            logger.info(f"Generating descriptions for {len(chunks)} chunks")
+            logger.info(f"Generating transcriptions and descriptions for {len(chunks)} chunks")
 
-            for chunk_id, chunk_data, chunk_index, start_time, end_time in chunks:
-                # Generate natural language description for the chunk
+            # First, transcribe all chunks
+            logger.info("Transcribing video chunks...")
+            transcriptions = transcription_service.transcribe_batch(chunks)
+
+            # Process chunks with both transcription and VLM
+            previous_transcription = None
+            for i, (chunk_id, chunk_data, chunk_index, start_time, end_time) in enumerate(chunks):
+                # Get current transcription
+                current_transcription = transcriptions[i].get("text", "") if i < len(transcriptions) else ""
+
+                # Generate natural language description with transcription context
                 description = vlm_service.generate_description(
                     video_chunk_data=chunk_data,
                     chunk_index=chunk_index,
                     start_time=start_time,
                     end_time=end_time,
                     video_filename=video.filename,
+                    current_transcription=current_transcription,
+                    previous_transcription=previous_transcription,
                 )
+
+                # Combine description with transcription for searchability
+                combined_text = description
+                if current_transcription:
+                    combined_text += f" [Transcription: {current_transcription}]"
 
                 # Upload chunk to GCS
                 storage_service.upload_video_chunk(
@@ -119,16 +143,19 @@ def fastapi_app():
                     chunk_index=chunk_index,
                 )
 
-                # Store metadata in Pinecone with VLM-generated description
+                # Store metadata in Pinecone with both description and transcription
                 vector_db_service.upsert_video_chunk(
                     chunk_id=chunk_id,
                     user_id=user_id,
                     video_id=video_id,
-                    text=description,
+                    text=combined_text,
                 )
 
                 chunk_ids.append(chunk_id)
                 logger.info(f"Processed chunk {chunk_index + 1}/{len(chunks)}")
+
+                # Update previous transcription for next iteration
+                previous_transcription = current_transcription
 
             # Calculate total duration
             total_duration = chunks[-1][4] if chunks else 0
@@ -197,6 +224,8 @@ def fastapi_app():
                 "storage": "initialized",
                 "vector_db": "initialized",
                 "video_processor": "initialized",
+                "vlm": "initialized",
+                "transcription": "initialized",
             },
         }
 
