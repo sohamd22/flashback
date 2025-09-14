@@ -10,7 +10,7 @@ import uuid
 import requests
 import pickle
 import base64
-from typing import List, Optional, Dict, Tuple, BinaryIO
+from typing import List, Optional, Dict, Tuple, BinaryIO, Any
 from datetime import datetime
 from collections import defaultdict
 from dataclasses import dataclass
@@ -24,56 +24,60 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Pydantic models (schemas)
-class ContactInput(BaseModel):
-    uuid: str
-    image_url: Optional[str] = None  # Google Cloud Storage URL
+class ProfileInput(BaseModel):
+    profile_id: str
+    image_url: Optional[str] = None  # Google Cloud Storage URL for reference image
     name: Optional[str] = None
 
 class AnalyzeVideoRequest(BaseModel):
-    user_id: str
+    requester_user_id: str  # The user making the request
     video_url: str
-    contacts: Optional[List[ContactInput]] = None
+    target_profiles: Optional[List[str]] = None  # Specific profile IDs to look for, if None uses all profiles
 
 class InteractionData(BaseModel):
+    profile_id: str
+    profile_name: Optional[str]
+    profile_email: str
     chunk_appearances: int
-    interactions: Dict[str, int]  # contact_id -> number of shared chunks
+    interactions: Dict[str, int]  # profile_id -> number of shared chunks
     face_images: List[str] = []  # base64 encoded face images
 
 class AnalyzeVideoResponse(BaseModel):
     video_id: str
-    user_id: str
+    requester_user_id: str
     video_url: str
     total_chunks: int
-    results: Dict[str, InteractionData]  # contact_id -> interaction data
+    detected_profiles: Dict[str, InteractionData]  # profile_id -> interaction data
+    new_interactions: List[Dict[str, Any]] = []  # List of new interactions created
 
 class GetAnalysisRequest(BaseModel):
-    user_id: str
+    requester_user_id: str
     video_id: str
 
 class GetAnalysisResponse(BaseModel):
     video_id: str
-    user_id: str
+    requester_user_id: str
     video_url: str
     total_chunks: int
-    results: Dict[str, InteractionData]
+    detected_profiles: Dict[str, InteractionData]
     created_at: datetime
 
-class Contact(BaseModel):
+class ProfileSummary(BaseModel):
     id: str
-    user_id: str
     name: Optional[str]
-    image_url: str
-    created_at: datetime
-    updated_at: datetime
+    email: str
+    has_face_data: bool
+    video_count: int
 
-class ListContactsResponse(BaseModel):
-    user_id: str
-    contacts: List[Contact]
+class ListProfilesResponse(BaseModel):
+    total_profiles: int
+    profiles_with_face_data: int
+    profiles: List[ProfileSummary]
 
 # Data classes for internal processing
 @dataclass
-class ServiceContactInput:
-    uuid: str
+class ServiceProfileInput:
+    profile_id: str
     image_data: Optional[bytes] = None
     image_url: Optional[str] = None
     name: Optional[str] = None
@@ -87,15 +91,17 @@ class FaceDetection:
 
 @dataclass
 class MatchResult:
-    contact_id: str
+    profile_id: str
     confidence: float
-    is_new_contact: bool
+    is_existing_profile: bool
 
 @dataclass
 class InteractionResult:
-    contact_id: str
+    profile_id: str
+    profile_name: Optional[str]
+    profile_email: str
     chunk_appearances: int
-    interactions: Dict[str, int]  # contact_id -> number of shared chunks
+    interactions: Dict[str, int]  # profile_id -> number of shared chunks
     face_images: List[str] = None  # base64 encoded face images
 
     def __post_init__(self):
@@ -107,66 +113,92 @@ class SupabaseClient:
     def __init__(self, supabase_url: str, supabase_key: str):
         self.client: Client = create_client(supabase_url, supabase_key)
 
-    def upsert_contact(
+    def upsert_profile_face_data(
         self,
-        user_id: str,
-        contact_uuid: str,
+        profile_id: str,
         face_encoding: np.ndarray,
-        image_url: str,
-        name: Optional[str] = None,
+        reference_image: Optional[str] = None,
     ) -> Dict:
-        """Upsert a contact with face encoding"""
+        """Update profile with face encoding and reference image"""
         try:
             # Serialize the face encoding and encode as base64 for JSON compatibility
             encoding_bytes = pickle.dumps(face_encoding)
             encoding_b64 = base64.b64encode(encoding_bytes).decode('utf-8')
 
-            contact_data = {
-                "id": contact_uuid,
-                "user_id": user_id,
-                "name": name,
+            update_data = {
                 "face_encoding": encoding_b64,
-                "image_url": image_url,
                 "updated_at": datetime.now().isoformat(),
             }
 
+            if reference_image:
+                update_data["reference_image"] = reference_image
+
             result = (
-                self.client.table("contacts")
-                .upsert(contact_data)
+                self.client.table("profiles")
+                .update(update_data)
+                .eq("id", profile_id)
                 .execute()
             )
 
-            logger.info(f"Upserted contact {contact_uuid} for user {user_id}")
+            logger.info(f"Updated profile {profile_id} with face encoding")
             return result.data[0] if result.data else {}
 
         except Exception as e:
-            logger.error(f"Error upserting contact: {str(e)}")
+            logger.error(f"Error updating profile face data: {str(e)}")
             raise
 
-    def get_user_contacts(self, user_id: str) -> List[Dict]:
-        """Get all contacts for a user with their face encodings"""
+    def get_all_profiles_with_face_data(self) -> List[Dict]:
+        """Get all profiles that have face encodings"""
         try:
             result = (
-                self.client.table("contacts")
-                .select("id, user_id, name, face_encoding, image_url")
-                .eq("user_id", user_id)
+                self.client.table("profiles")
+                .select("id, name, email, face_encoding, reference_image, video_ids")
+                .not_("face_encoding", "is", "null")
                 .execute()
             )
 
-            contacts = []
-            for contact in result.data:
-                # Deserialize face encoding from base64
-                encoding_b64 = contact["face_encoding"]
-                encoding_bytes = base64.b64decode(encoding_b64.encode('utf-8'))
-                face_encoding = pickle.loads(encoding_bytes)
-                contact["face_encoding"] = face_encoding
-                contacts.append(contact)
+            profiles = []
+            for profile in result.data:
+                if profile.get("face_encoding"):
+                    # Deserialize face encoding from base64
+                    encoding_b64 = profile["face_encoding"]
+                    encoding_bytes = base64.b64decode(encoding_b64.encode('utf-8'))
+                    face_encoding = pickle.loads(encoding_bytes)
+                    profile["face_encoding"] = face_encoding
+                    profiles.append(profile)
 
-            logger.info(f"Retrieved {len(contacts)} contacts for user {user_id}")
-            return contacts
+            logger.info(f"Retrieved {len(profiles)} profiles with face data")
+            return profiles
 
         except Exception as e:
-            logger.error(f"Error retrieving contacts: {str(e)}")
+            logger.error(f"Error retrieving profiles with face data: {str(e)}")
+            raise
+
+    def get_profiles_by_ids(self, profile_ids: List[str]) -> List[Dict]:
+        """Get specific profiles by their IDs"""
+        try:
+            result = (
+                self.client.table("profiles")
+                .select("id, name, email, face_encoding, reference_image, video_ids")
+                .in_("id", profile_ids)
+                .execute()
+            )
+
+            profiles = []
+            for profile in result.data:
+                if profile.get("face_encoding"):
+                    # Deserialize face encoding from base64
+                    encoding_b64 = profile["face_encoding"]
+                    encoding_bytes = base64.b64decode(encoding_b64.encode('utf-8'))
+                    face_encoding = pickle.loads(encoding_bytes)
+                    profile["face_encoding"] = face_encoding
+                profiles.append(profile)
+
+            logger.info(f"Retrieved {len(profiles)} specific profiles")
+            return profiles
+
+        except Exception as e:
+            logger.error(f"Error retrieving specific profiles: {str(e)}")
             raise
 
     def store_video_analysis(
@@ -217,11 +249,65 @@ class SupabaseClient:
             logger.error(f"Error retrieving video analysis: {str(e)}")
             raise
 
+    def add_video_to_profile(self, profile_id: str, video_id: str) -> Dict:
+        """Add video ID to profile's video_ids array"""
+        try:
+            # First get current video_ids
+            result = (
+                self.client.table("profiles")
+                .select("video_ids")
+                .eq("id", profile_id)
+                .single()
+                .execute()
+            )
+
+            current_video_ids = result.data.get("video_ids", []) if result.data else []
+
+            # Add video_id if not already present
+            if video_id not in current_video_ids:
+                current_video_ids.append(video_id)
+
+                # Update the profile
+                update_result = (
+                    self.client.table("profiles")
+                    .update({"video_ids": current_video_ids, "updated_at": datetime.now().isoformat()})
+                    .eq("id", profile_id)
+                    .execute()
+                )
+
+                logger.info(f"Added video {video_id} to profile {profile_id}")
+                return update_result.data[0] if update_result.data else {}
+
+            return result.data
+
+        except Exception as e:
+            logger.error(f"Error adding video to profile: {str(e)}")
+            raise
+
+    def upsert_interaction(self, user_id_1: str, user_id_2: str, increment: int = 1) -> Dict:
+        """Upsert interaction between two users using the database function"""
+        try:
+            result = self.client.rpc(
+                "upsert_interaction",
+                {
+                    "uid1": user_id_1,
+                    "uid2": user_id_2,
+                    "increment_by": increment
+                }
+            ).execute()
+
+            logger.info(f"Upserted interaction between {user_id_1} and {user_id_2}")
+            return result.data
+
+        except Exception as e:
+            logger.error(f"Error upserting interaction: {str(e)}")
+            raise
+
     def store_chunk_detection(
         self,
         video_id: str,
         chunk_index: int,
-        contact_id: str,
+        profile_id: str,
         confidence: float,
         bbox: Optional[Dict] = None,
     ) -> Dict:
@@ -230,7 +316,7 @@ class SupabaseClient:
             detection_data = {
                 "video_id": video_id,
                 "chunk_index": chunk_index,
-                "contact_id": contact_id,
+                "contact_id": profile_id,  # Using profile_id as contact_id for backward compatibility
                 "confidence": confidence,
                 "bbox": bbox,
             }
@@ -517,17 +603,17 @@ class FaceProcessor:
         logger.info(f"Detected {len(all_detections)} total faces across {len(selected_frames)}/{len(frames)} frames (skip={self.frame_skip})")
         return all_detections
 
-    def match_face_to_contacts(
+    def match_face_to_profiles(
         self,
         face_encoding: np.ndarray,
-        contact_encodings: Dict[str, np.ndarray]
+        profile_encodings: Dict[str, np.ndarray]
     ) -> Optional[MatchResult]:
-        """Match a face encoding to existing contacts"""
-        if not contact_encodings:
+        """Match a face encoding to existing profiles"""
+        if not profile_encodings:
             return None
 
-        contact_ids = list(contact_encodings.keys())
-        known_encodings = list(contact_encodings.values())
+        profile_ids = list(profile_encodings.keys())
+        known_encodings = list(profile_encodings.values())
 
         # Calculate distances to all known faces
         distances = face_recognition.face_distance(known_encodings, face_encoding)
@@ -541,15 +627,15 @@ class FaceProcessor:
 
         if confidence >= self.face_match_threshold:
             return MatchResult(
-                contact_id=contact_ids[min_distance_idx],
+                profile_id=profile_ids[min_distance_idx],
                 confidence=confidence,
-                is_new_contact=False
+                is_existing_profile=True
             )
 
         return None
 
-    def create_contact_from_image(self, image_data: bytes) -> Tuple[str, np.ndarray]:
-        """Create a new contact from an uploaded image"""
+    def create_face_encoding_from_image(self, image_data: bytes) -> np.ndarray:
+        """Create face encoding from an uploaded image"""
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as temp_file:
             temp_file.write(image_data)
             temp_file.flush()
@@ -568,8 +654,7 @@ class FaceProcessor:
                 if len(encodings) > 1:
                     logger.warning("Multiple faces found in image, using the first one")
 
-                contact_id = str(uuid.uuid4())
-                return contact_id, encodings[0]
+                return encodings[0]
 
             finally:
                 if os.path.exists(temp_path):
@@ -639,83 +724,86 @@ class FacialRecognitionService:
             logger.error(f"Failed to download image from {image_url}: {str(e)}")
             raise
 
-    def process_contact_inputs(
-        self, user_id: str, contact_inputs: List[ServiceContactInput]
-    ) -> Dict[str, Tuple[str, str]]:  # contact_uuid -> (contact_id, image_url)
-        """Process contact inputs (either image data or image URLs), return mapping of input UUIDs to stored contact info"""
-        contact_mapping = {}
+    def process_profile_inputs(
+        self, profile_inputs: List[ServiceProfileInput]
+    ) -> Dict[str, str]:  # profile_id -> status
+        """Process profile inputs to add/update face encodings from reference images"""
+        processing_results = {}
 
-        for contact_input in contact_inputs:
+        for profile_input in profile_inputs:
             try:
                 # Handle both image data and image URLs
-                if hasattr(contact_input, 'image_data') and contact_input.image_data:
-                    # Direct image data provided
-                    image_data = contact_input.image_data
-                    image_url = None  # Will be set by caller if needed
-                elif hasattr(contact_input, 'image_url') and contact_input.image_url:
+                if hasattr(profile_input, 'image_data') and profile_input.image_data:
+                    image_data = profile_input.image_data
+                elif hasattr(profile_input, 'image_url') and profile_input.image_url:
                     # Image URL provided - download it
-                    image_data = self.download_image_from_url(contact_input.image_url)
-                    image_url = contact_input.image_url
+                    image_data = self.download_image_from_url(profile_input.image_url)
                 else:
-                    logger.error(f"Contact {contact_input.uuid} has no image data or URL")
+                    logger.error(f"Profile {profile_input.profile_id} has no image data or URL")
+                    processing_results[profile_input.profile_id] = "error: no image data"
                     continue
 
                 # Create face encoding from image
-                contact_id, face_encoding = self.face_processor.create_contact_from_image(image_data)
+                face_encoding = self.face_processor.create_face_encoding_from_image(image_data)
 
-                # Store contact in Supabase
-                self.supabase_client.upsert_contact(
-                    user_id=user_id,
-                    contact_uuid=contact_input.uuid,
+                # Convert image to base64 for storage
+                reference_image_b64 = base64.b64encode(image_data).decode('utf-8')
+
+                # Update profile with face data
+                self.supabase_client.upsert_profile_face_data(
+                    profile_id=profile_input.profile_id,
                     face_encoding=face_encoding,
-                    image_url=image_url or f"placeholder_for_{contact_input.uuid}",
-                    name=contact_input.name,
+                    reference_image=reference_image_b64,
                 )
 
-                contact_mapping[contact_input.uuid] = (contact_input.uuid, image_url or f"processed_{contact_input.uuid}")
-                logger.info(f"Processed contact {contact_input.uuid}")
+                processing_results[profile_input.profile_id] = "success"
+                logger.info(f"Processed profile {profile_input.profile_id}")
 
             except Exception as e:
-                logger.error(f"Failed to process contact {contact_input.uuid}: {str(e)}")
-                # Continue processing other contacts
+                logger.error(f"Failed to process profile {profile_input.profile_id}: {str(e)}")
+                processing_results[profile_input.profile_id] = f"error: {str(e)}"
                 continue
 
-        return contact_mapping
+        return processing_results
 
     def analyze_video(
         self,
-        user_id: str,
+        requester_user_id: str,
         video_url: str,
-        contact_inputs: Optional[List[ServiceContactInput]] = None,
-    ) -> Tuple[str, int, Dict[str, InteractionResult]]:
+        target_profile_ids: Optional[List[str]] = None,
+    ) -> Tuple[str, int, Dict[str, InteractionResult], List[Dict]]:
         """
         Main method to analyze video for facial recognition and interactions
-        Returns (video_id, total_chunks, results_dict) where results_dict has contact UUIDs as keys and interaction data as values
+        Returns (video_id, total_chunks, detected_profiles_dict, new_interactions_list)
         """
         video_id = str(uuid.uuid4())
+        new_interactions = []
 
         try:
-            # Step 1: Process any new contact inputs
-            if contact_inputs:
-                logger.info(f"Processing {len(contact_inputs)} contact inputs")
-                self.process_contact_inputs(user_id, contact_inputs)
+            # Step 1: Load profiles to search for
+            if target_profile_ids:
+                logger.info(f"Loading {len(target_profile_ids)} specific profiles")
+                profiles = self.supabase_client.get_profiles_by_ids(target_profile_ids)
+            else:
+                logger.info("Loading all profiles with face data")
+                profiles = self.supabase_client.get_all_profiles_with_face_data()
 
-            # Step 2: Load existing contacts from database
-            logger.info("Loading existing contacts from database")
-            existing_contacts = self.supabase_client.get_user_contacts(user_id)
-            contact_encodings = {
-                contact["id"]: contact["face_encoding"] for contact in existing_contacts
+            profile_encodings = {
+                profile["id"]: profile["face_encoding"] for profile in profiles
             }
-            logger.info(f"Loaded {len(contact_encodings)} existing contacts")
+            profile_info = {
+                profile["id"]: profile for profile in profiles
+            }
+            logger.info(f"Loaded {len(profile_encodings)} profiles for matching")
 
-            # Step 3: Split video into 5-second chunks
+            # Step 2: Split video into 5-second chunks
             logger.info(f"Downloading and chunking video from {video_url}")
             chunks = self.video_chunker.split_video_from_url(video_url, video_id)
             logger.info(f"Created {len(chunks)} video chunks")
 
-            # Step 4: Process each chunk for face detection and recognition
-            chunk_results = []  # List of (chunk_index, detected_contact_ids, face_images_dict)
-            contact_face_images = defaultdict(list)  # contact_id -> [face_images]
+            # Step 3: Process each chunk for face detection and recognition
+            chunk_results = []  # List of (chunk_index, detected_profile_ids)
+            profile_face_images = defaultdict(list)  # profile_id -> [face_images]
 
             for chunk_id, chunk_data, chunk_index, start_time, end_time in chunks:
                 logger.info(f"Processing chunk {chunk_index + 1}/{len(chunks)}")
@@ -727,7 +815,7 @@ class FacialRecognitionService:
                 face_groups = self.face_processor.group_faces_in_chunk(face_detections)
 
                 # Process each unique face in the chunk
-                chunk_contact_ids = set()
+                chunk_profile_ids = set()
 
                 for face_group in face_groups:
                     # Get the best detection from this group
@@ -736,25 +824,25 @@ class FacialRecognitionService:
                     # Extract face image as base64
                     face_b64 = self._extract_face_image(chunk_data, best_detection)
 
-                    # Try to match to existing contacts
-                    match_result = self.face_processor.match_face_to_contacts(
-                        best_detection.face_encoding, contact_encodings
+                    # Try to match to existing profiles
+                    match_result = self.face_processor.match_face_to_profiles(
+                        best_detection.face_encoding, profile_encodings
                     )
 
                     if match_result:
-                        # Matched to existing contact
-                        chunk_contact_ids.add(match_result.contact_id)
-                        logger.info(f"Matched face to contact {match_result.contact_id} with confidence {match_result.confidence:.3f}")
+                        # Matched to existing profile
+                        chunk_profile_ids.add(match_result.profile_id)
+                        logger.info(f"Matched face to profile {match_result.profile_id} with confidence {match_result.confidence:.3f}")
 
-                        # Store face image for this contact
+                        # Store face image for this profile
                         if face_b64:
-                            contact_face_images[match_result.contact_id].append(face_b64)
+                            profile_face_images[match_result.profile_id].append(face_b64)
 
                         # Store detection for debugging
                         self.supabase_client.store_chunk_detection(
                             video_id=video_id,
                             chunk_index=chunk_index,
-                            contact_id=match_result.contact_id,
+                            profile_id=match_result.profile_id,
                             confidence=match_result.confidence,
                             bbox={
                                 "top": int(best_detection.bbox[0]),
@@ -763,56 +851,56 @@ class FacialRecognitionService:
                                 "left": int(best_detection.bbox[3]),
                             },
                         )
-                    else:
-                        # Create new contact for unrecognized face
-                        if best_detection.confidence >= self.face_processor.new_contact_threshold:
-                            new_contact_id = str(uuid.uuid4())
 
-                            # Store new contact in Supabase (without uploaded image for now)
-                            self.supabase_client.upsert_contact(
-                                user_id=user_id,
-                                contact_uuid=new_contact_id,
-                                face_encoding=best_detection.face_encoding,
-                                image_url=f"auto_generated_{new_contact_id}",  # Placeholder URL
-                                name=None,  # Auto-generated contact
-                            )
+                        # Add video to profile's video list
+                        self.supabase_client.add_video_to_profile(match_result.profile_id, video_id)
 
-                            # Add to our local contact encodings for subsequent chunks
-                            contact_encodings[new_contact_id] = best_detection.face_encoding
-                            chunk_contact_ids.add(new_contact_id)
+                chunk_results.append((chunk_index, list(chunk_profile_ids)))
 
-                            # Store face image for this contact
-                            if face_b64:
-                                contact_face_images[new_contact_id].append(face_b64)
-
-                            logger.info(f"Created new contact {new_contact_id}")
-
-                chunk_results.append((chunk_index, list(chunk_contact_ids)))
-
-            # Step 5: Calculate interactions and frequency
+            # Step 4: Calculate interactions and frequency
             logger.info("Calculating interactions and frequencies")
-            interaction_results = self._calculate_interactions(chunk_results, contact_face_images)
+            interaction_results = self._calculate_profile_interactions(chunk_results, profile_face_images, profile_info)
+
+            # Step 5: Track interactions between detected profiles
+            detected_profile_ids = list(interaction_results.keys())
+            for i, profile_id_1 in enumerate(detected_profile_ids):
+                for profile_id_2 in detected_profile_ids[i + 1:]:
+                    # Calculate how many chunks they appeared together in
+                    shared_chunks = interaction_results[profile_id_1].interactions.get(profile_id_2, 0)
+
+                    if shared_chunks > 0:
+                        # Upsert interaction in database
+                        self.supabase_client.upsert_interaction(profile_id_1, profile_id_2, shared_chunks)
+                        new_interactions.append({
+                            "profile_1": profile_id_1,
+                            "profile_2": profile_id_2,
+                            "shared_chunks": shared_chunks
+                        })
+                        logger.info(f"Recorded {shared_chunks} interactions between {profile_id_1} and {profile_id_2}")
 
             # Step 6: Store analysis results in database
             analysis_data = {
-                contact_id: {
+                profile_id: {
+                    "profile_id": result.profile_id,
+                    "profile_name": result.profile_name,
+                    "profile_email": result.profile_email,
                     "chunk_appearances": result.chunk_appearances,
                     "interactions": result.interactions,
                     "face_images": result.face_images,
                 }
-                for contact_id, result in interaction_results.items()
+                for profile_id, result in interaction_results.items()
             }
 
             self.supabase_client.store_video_analysis(
-                user_id=user_id,
+                user_id=requester_user_id,
                 video_id=video_id,
                 video_url=video_url,
                 total_chunks=len(chunks),
                 analysis_results=analysis_data,
             )
 
-            logger.info(f"Analysis complete. Found {len(interaction_results)} unique contacts")
-            return video_id, len(chunks), interaction_results
+            logger.info(f"Analysis complete. Found {len(interaction_results)} profiles, recorded {len(new_interactions)} interactions")
+            return video_id, len(chunks), interaction_results, new_interactions
 
         except Exception as e:
             logger.error(f"Error analyzing video: {str(e)}")
@@ -843,36 +931,41 @@ class FacialRecognitionService:
             logger.error(f"Failed to extract face image: {str(e)}")
             return None
 
-    def _calculate_interactions(
-        self, chunk_results: List[Tuple[int, List[str]]], contact_face_images: Dict[str, List[str]]
+    def _calculate_profile_interactions(
+        self, chunk_results: List[Tuple[int, List[str]]], profile_face_images: Dict[str, List[str]], profile_info: Dict[str, Dict]
     ) -> Dict[str, InteractionResult]:
-        """Calculate interaction frequencies between contacts and include face images"""
-        # Count appearances per contact
-        contact_appearances = defaultdict(int)
-        # Count co-appearances between contacts
-        contact_interactions = defaultdict(lambda: defaultdict(int))
+        """Calculate interaction frequencies between profiles and include face images"""
+        # Count appearances per profile
+        profile_appearances = defaultdict(int)
+        # Count co-appearances between profiles
+        profile_interactions = defaultdict(lambda: defaultdict(int))
 
-        for chunk_index, contact_ids in chunk_results:
+        for chunk_index, profile_ids in chunk_results:
             # Count appearances
-            for contact_id in contact_ids:
-                contact_appearances[contact_id] += 1
+            for profile_id in profile_ids:
+                profile_appearances[profile_id] += 1
 
             # Count interactions (co-appearances in same chunk)
-            for i, contact_id1 in enumerate(contact_ids):
-                for contact_id2 in contact_ids[i + 1:]:
-                    contact_interactions[contact_id1][contact_id2] += 1
-                    contact_interactions[contact_id2][contact_id1] += 1
+            for i, profile_id1 in enumerate(profile_ids):
+                for profile_id2 in profile_ids[i + 1:]:
+                    profile_interactions[profile_id1][profile_id2] += 1
+                    profile_interactions[profile_id2][profile_id1] += 1
 
         # Build final results
         results = {}
-        for contact_id, appearances in contact_appearances.items():
-            # Limit face images to avoid response size issues (max 3 images per contact)
-            face_images = contact_face_images.get(contact_id, [])[:3]
+        for profile_id, appearances in profile_appearances.items():
+            # Limit face images to avoid response size issues (max 3 images per profile)
+            face_images = profile_face_images.get(profile_id, [])[:3]
 
-            results[contact_id] = InteractionResult(
-                contact_id=contact_id,
+            # Get profile info
+            profile = profile_info.get(profile_id, {})
+
+            results[profile_id] = InteractionResult(
+                profile_id=profile_id,
+                profile_name=profile.get("name"),
+                profile_email=profile.get("email", ""),
                 chunk_appearances=appearances,
-                interactions=dict(contact_interactions[contact_id]),
+                interactions=dict(profile_interactions[profile_id]),
                 face_images=face_images,
             )
 
@@ -930,32 +1023,29 @@ def fastapi_app():
         Analyze video for facial recognition and interactions
 
         Args:
-            request: AnalyzeVideoRequest with user_id, video_url, and optional contact list with GCS URLs
+            request: AnalyzeVideoRequest with requester_user_id, video_url, and optional target_profiles list
         """
         try:
-            # Process contact inputs if provided
-            contact_inputs = []
-            if request.contacts:
-                for contact in request.contacts:
-                    contact_inputs.append(ServiceContactInput(
-                        uuid=contact.uuid,
-                        image_url=contact.image_url,
-                        name=contact.name,
-                    ))
-
-            logger.info(f"Starting video analysis for user {request.user_id} with {len(contact_inputs)} contacts")
+            logger.info(f"Starting video analysis for user {request.requester_user_id}")
+            if request.target_profiles:
+                logger.info(f"Targeting {len(request.target_profiles)} specific profiles")
+            else:
+                logger.info("Searching against all profiles with face data")
 
             # Analyze video
-            video_id, total_chunks, results = facial_recognition_service.analyze_video(
-                user_id=request.user_id,
+            video_id, total_chunks, results, new_interactions = facial_recognition_service.analyze_video(
+                requester_user_id=request.requester_user_id,
                 video_url=request.video_url,
-                contact_inputs=contact_inputs if contact_inputs else None,
+                target_profile_ids=request.target_profiles,
             )
 
             # Convert results to API format
-            interaction_data = {}
-            for contact_id, result in results.items():
-                interaction_data[contact_id] = InteractionData(
+            detected_profiles = {}
+            for profile_id, result in results.items():
+                detected_profiles[profile_id] = InteractionData(
+                    profile_id=result.profile_id,
+                    profile_name=result.profile_name,
+                    profile_email=result.profile_email,
                     chunk_appearances=result.chunk_appearances,
                     interactions=result.interactions,
                     face_images=result.face_images,
@@ -963,10 +1053,11 @@ def fastapi_app():
 
             return AnalyzeVideoResponse(
                 video_id=video_id,
-                user_id=request.user_id,
+                requester_user_id=request.requester_user_id,
                 video_url=request.video_url,
                 total_chunks=total_chunks,
-                results=interaction_data,
+                detected_profiles=detected_profiles,
+                new_interactions=new_interactions,
             )
 
         except Exception as e:
@@ -975,18 +1066,21 @@ def fastapi_app():
 
 
     @web_app.get("/analysis/{video_id}", response_model=GetAnalysisResponse)
-    async def get_analysis(video_id: str, user_id: str):
+    async def get_analysis(video_id: str, requester_user_id: str):
         """Get stored video analysis results"""
         try:
-            analysis = supabase_client.get_video_analysis(user_id, video_id)
+            analysis = supabase_client.get_video_analysis(requester_user_id, video_id)
 
             if not analysis:
                 raise HTTPException(status_code=404, detail="Analysis not found")
 
             # Convert stored results to API format
-            interaction_data = {}
-            for contact_id, result in analysis["analysis_results"].items():
-                interaction_data[contact_id] = InteractionData(
+            detected_profiles = {}
+            for profile_id, result in analysis["analysis_results"].items():
+                detected_profiles[profile_id] = InteractionData(
+                    profile_id=result.get("profile_id", profile_id),
+                    profile_name=result.get("profile_name"),
+                    profile_email=result.get("profile_email", ""),
                     chunk_appearances=result["chunk_appearances"],
                     interactions=result["interactions"],
                     face_images=result.get("face_images", []),
@@ -994,10 +1088,10 @@ def fastapi_app():
 
             return GetAnalysisResponse(
                 video_id=analysis["video_id"],
-                user_id=analysis["user_id"],
+                requester_user_id=analysis["user_id"],
                 video_url=analysis["video_url"],
                 total_chunks=analysis["total_chunks"],
-                results=interaction_data,
+                detected_profiles=detected_profiles,
                 created_at=analysis["created_at"],
             )
 
@@ -1005,30 +1099,67 @@ def fastapi_app():
             logger.error(f"Error retrieving analysis: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @web_app.get("/contacts/{user_id}", response_model=ListContactsResponse)
-    async def list_contacts(user_id: str):
-        """List all contacts for a user"""
+    @web_app.get("/profiles", response_model=ListProfilesResponse)
+    async def list_profiles():
+        """List all profiles in the system with face data summary"""
         try:
-            contacts_data = supabase_client.get_user_contacts(user_id)
+            profiles_data = supabase_client.get_all_profiles_with_face_data()
 
-            contacts = []
-            for contact_data in contacts_data:
-                contacts.append(Contact(
-                    id=contact_data["id"],
-                    user_id=contact_data["user_id"],
-                    name=contact_data["name"],
-                    image_url=contact_data["image_url"],
-                    created_at=contact_data.get("created_at"),
-                    updated_at=contact_data.get("updated_at"),
+            profiles = []
+            for profile_data in profiles_data:
+                profiles.append(ProfileSummary(
+                    id=profile_data["id"],
+                    name=profile_data.get("name"),
+                    email=profile_data.get("email", ""),
+                    has_face_data=bool(profile_data.get("face_encoding")),
+                    video_count=len(profile_data.get("video_ids", [])),
                 ))
 
-            return ListContactsResponse(
-                user_id=user_id,
-                contacts=contacts,
+            return ListProfilesResponse(
+                total_profiles=len(profiles),
+                profiles_with_face_data=len([p for p in profiles if p.has_face_data]),
+                profiles=profiles,
             )
 
         except Exception as e:
-            logger.error(f"Error listing contacts: {str(e)}")
+            logger.error(f"Error listing profiles: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @web_app.post("/profile/{profile_id}/add-face-data")
+    async def add_face_data_to_profile(profile_id: str, image_url: str):
+        """Add face encoding to a profile from a reference image URL"""
+        try:
+            profile_input = ServiceProfileInput(
+                profile_id=profile_id,
+                image_url=image_url
+            )
+
+            result = facial_recognition_service.process_profile_inputs([profile_input])
+
+            return {
+                "profile_id": profile_id,
+                "status": result.get(profile_id, "error"),
+                "message": f"Face data processing {'successful' if result.get(profile_id) == 'success' else 'failed'}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error adding face data to profile: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @web_app.get("/interactions/{user_id}")
+    async def get_user_interactions(user_id: str):
+        """Get all interactions for a specific user"""
+        try:
+            # Use the database function to get interactions
+            result = supabase_client.client.rpc("get_user_interactions", {"uid": user_id}).execute()
+
+            return {
+                "user_id": user_id,
+                "interactions": result.data or []
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting user interactions: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
     @web_app.get("/health")
@@ -1047,21 +1178,25 @@ def fastapi_app():
 def main():
     print("Facial Recognition API deployed!")
     print("\nEndpoints:")
-    print("  POST /analyze-video - Analyze video with optional contact GCS URLs")
-    print("  GET /analysis/{video_id}?user_id={user_id} - Get stored analysis")
-    print("  GET /contacts/{user_id} - List user contacts")
+    print("  POST /analyze-video - Analyze video against profiles database")
+    print("  GET /analysis/{video_id}?requester_user_id={user_id} - Get stored analysis")
+    print("  GET /profiles - List all profiles with face data")
+    print("  POST /profile/{profile_id}/add-face-data - Add face encoding to profile")
+    print("  GET /interactions/{user_id} - Get user interactions")
     print("  GET /health - Health check")
     print("\nExample usage:")
     print("  curl -X POST {url}/analyze-video \\")
     print("    -H 'Content-Type: application/json' \\")
     print("    -d '{")
-    print("      \"user_id\": \"user123\",")
+    print("      \"requester_user_id\": \"user123\",")
     print("      \"video_url\": \"https://storage.googleapis.com/bucket/video.mp4\",")
-    print("      \"contacts\": [")
-    print("        {")
-    print("          \"uuid\": \"uuid1\",")
-    print("          \"image_url\": \"https://storage.googleapis.com/bucket/john.jpg\",")
-    print("          \"name\": \"John Doe\"")
-    print("        }")
-    print("      ]")
+    print("      \"target_profiles\": [\"profile1\", \"profile2\"] // optional")
     print("    }'")
+    print("")
+    print("  curl -X POST {url}/profile/profile123/add-face-data \\")
+    print("    -H 'Content-Type: application/json' \\")
+    print("    -d '{")
+    print("      \"image_url\": \"https://storage.googleapis.com/bucket/reference.jpg\"")
+    print("    }'")
+    print("")
+    print("  curl {url}/interactions/user123")
