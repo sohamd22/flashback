@@ -37,6 +37,7 @@ class AnalyzeVideoRequest(BaseModel):
 class InteractionData(BaseModel):
     chunk_appearances: int
     interactions: Dict[str, int]  # contact_id -> number of shared chunks
+    face_images: List[str] = []  # base64 encoded face images
 
 class AnalyzeVideoResponse(BaseModel):
     video_id: str
@@ -95,6 +96,11 @@ class InteractionResult:
     contact_id: str
     chunk_appearances: int
     interactions: Dict[str, int]  # contact_id -> number of shared chunks
+    face_images: List[str] = None  # base64 encoded face images
+
+    def __post_init__(self):
+        if self.face_images is None:
+            self.face_images = []
 
 # Services classes
 class SupabaseClient:
@@ -401,9 +407,13 @@ class FaceProcessor:
         self,
         face_match_threshold: float = 0.6,
         new_contact_threshold: float = 0.5,
+        frame_skip: int = 3,  # Process every 3rd frame for speed
+        detection_scale: float = 0.5,  # Scale down frames for detection
     ):
         self.face_match_threshold = face_match_threshold
         self.new_contact_threshold = new_contact_threshold
+        self.frame_skip = frame_skip
+        self.detection_scale = detection_scale
 
     def extract_frames_from_video_chunk(self, video_chunk_data: bytes) -> List[np.ndarray]:
         """Extract all frames from a video chunk"""
@@ -436,19 +446,44 @@ class FaceProcessor:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
 
-    def detect_faces_in_frame(self, frame: np.ndarray, frame_number: int) -> List[FaceDetection]:
-        """Detect all faces in a single frame"""
+    def detect_faces_in_frame(self, frame: np.ndarray, frame_number: int, original_frame: np.ndarray = None) -> List[FaceDetection]:
+        """Detect all faces in a single frame with optimization"""
         try:
-            # Find face locations and encodings
-            face_locations = face_recognition.face_locations(frame, model="hog")  # Use "cnn" for better accuracy but slower
-            face_encodings = face_recognition.face_encodings(frame, face_locations)
+            # Scale down frame for detection to improve speed
+            if self.detection_scale != 1.0:
+                height, width = frame.shape[:2]
+                new_height, new_width = int(height * self.detection_scale), int(width * self.detection_scale)
+                detection_frame = cv2.resize(frame, (new_width, new_height))
+                scale_factor = 1.0 / self.detection_scale
+            else:
+                detection_frame = frame
+                scale_factor = 1.0
+
+            # Find face locations and encodings on scaled frame
+            face_locations = face_recognition.face_locations(detection_frame, model="hog")
+
+            # If we scaled down, we need to get encodings from original resolution
+            if self.detection_scale != 1.0 and face_locations:
+                # Scale face locations back to original frame size
+                scaled_locations = []
+                for (top, right, bottom, left) in face_locations:
+                    scaled_locations.append((
+                        int(top * scale_factor),
+                        int(right * scale_factor),
+                        int(bottom * scale_factor),
+                        int(left * scale_factor)
+                    ))
+                # Get encodings from original frame at scaled locations
+                face_encodings = face_recognition.face_encodings(frame, scaled_locations)
+                face_locations = scaled_locations
+            else:
+                face_encodings = face_recognition.face_encodings(detection_frame, face_locations)
 
             detections = []
             for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
                 # Calculate confidence based on face detection quality
-                # For now, we'll use a simple heuristic based on face size
                 face_area = (right - left) * (bottom - top)
-                confidence = min(1.0, face_area / 10000)  # Adjust this threshold as needed
+                confidence = min(1.0, face_area / 5000)  # Adjusted threshold for scaled detection
 
                 detection = FaceDetection(
                     face_encoding=face_encoding,
@@ -465,16 +500,21 @@ class FaceProcessor:
             return []
 
     def process_video_chunk_faces(self, video_chunk_data: bytes) -> List[FaceDetection]:
-        """Process all faces in a video chunk across all frames"""
+        """Process all faces in a video chunk across selected frames for speed"""
         all_detections = []
 
         frames = self.extract_frames_from_video_chunk(video_chunk_data)
 
-        for frame_number, frame in enumerate(frames):
-            detections = self.detect_faces_in_frame(frame, frame_number)
+        # Process only every Nth frame for speed optimization
+        selected_frames = frames[::self.frame_skip]
+
+        for i, frame in enumerate(selected_frames):
+            # Calculate the actual frame number in the original sequence
+            actual_frame_number = i * self.frame_skip
+            detections = self.detect_faces_in_frame(frame, actual_frame_number)
             all_detections.extend(detections)
 
-        logger.info(f"Detected {len(all_detections)} total faces across {len(frames)} frames")
+        logger.info(f"Detected {len(all_detections)} total faces across {len(selected_frames)}/{len(frames)} frames (skip={self.frame_skip})")
         return all_detections
 
     def match_face_to_contacts(
@@ -674,7 +714,8 @@ class FacialRecognitionService:
             logger.info(f"Created {len(chunks)} video chunks")
 
             # Step 4: Process each chunk for face detection and recognition
-            chunk_results = []  # List of (chunk_index, detected_contact_ids)
+            chunk_results = []  # List of (chunk_index, detected_contact_ids, face_images_dict)
+            contact_face_images = defaultdict(list)  # contact_id -> [face_images]
 
             for chunk_id, chunk_data, chunk_index, start_time, end_time in chunks:
                 logger.info(f"Processing chunk {chunk_index + 1}/{len(chunks)}")
@@ -692,6 +733,9 @@ class FacialRecognitionService:
                     # Get the best detection from this group
                     best_detection = self.face_processor.get_best_detection_from_group(face_group)
 
+                    # Extract face image as base64
+                    face_b64 = self._extract_face_image(chunk_data, best_detection)
+
                     # Try to match to existing contacts
                     match_result = self.face_processor.match_face_to_contacts(
                         best_detection.face_encoding, contact_encodings
@@ -701,6 +745,10 @@ class FacialRecognitionService:
                         # Matched to existing contact
                         chunk_contact_ids.add(match_result.contact_id)
                         logger.info(f"Matched face to contact {match_result.contact_id} with confidence {match_result.confidence:.3f}")
+
+                        # Store face image for this contact
+                        if face_b64:
+                            contact_face_images[match_result.contact_id].append(face_b64)
 
                         # Store detection for debugging
                         self.supabase_client.store_chunk_detection(
@@ -733,19 +781,24 @@ class FacialRecognitionService:
                             contact_encodings[new_contact_id] = best_detection.face_encoding
                             chunk_contact_ids.add(new_contact_id)
 
+                            # Store face image for this contact
+                            if face_b64:
+                                contact_face_images[new_contact_id].append(face_b64)
+
                             logger.info(f"Created new contact {new_contact_id}")
 
                 chunk_results.append((chunk_index, list(chunk_contact_ids)))
 
             # Step 5: Calculate interactions and frequency
             logger.info("Calculating interactions and frequencies")
-            interaction_results = self._calculate_interactions(chunk_results)
+            interaction_results = self._calculate_interactions(chunk_results, contact_face_images)
 
             # Step 6: Store analysis results in database
             analysis_data = {
                 contact_id: {
                     "chunk_appearances": result.chunk_appearances,
                     "interactions": result.interactions,
+                    "face_images": result.face_images,
                 }
                 for contact_id, result in interaction_results.items()
             }
@@ -765,8 +818,8 @@ class FacialRecognitionService:
             logger.error(f"Error analyzing video: {str(e)}")
             raise
 
-    def _extract_face_image(self, chunk_data: bytes, face_detection: FaceDetection) -> Optional[bytes]:
-        """Extract face image from video chunk for new contact creation"""
+    def _extract_face_image(self, chunk_data: bytes, face_detection: FaceDetection) -> Optional[str]:
+        """Extract face image from video chunk and return as base64 string"""
         try:
             frames = self.face_processor.extract_frames_from_video_chunk(chunk_data)
             if face_detection.frame_number < len(frames):
@@ -774,25 +827,26 @@ class FacialRecognitionService:
                 top, right, bottom, left = face_detection.bbox
 
                 # Extract face region with some padding
-                padding = 50
+                padding = 30
                 face_img = frame[
                     max(0, top - padding):min(frame.shape[0], bottom + padding),
                     max(0, left - padding):min(frame.shape[1], right + padding)
                 ]
 
-                # Convert to bytes
+                # Convert to base64
                 import cv2
                 _, img_encoded = cv2.imencode('.jpg', cv2.cvtColor(face_img, cv2.COLOR_RGB2BGR))
-                return img_encoded.tobytes()
+                face_b64 = base64.b64encode(img_encoded.tobytes()).decode('utf-8')
+                return face_b64
 
         except Exception as e:
             logger.error(f"Failed to extract face image: {str(e)}")
             return None
 
     def _calculate_interactions(
-        self, chunk_results: List[Tuple[int, List[str]]]
+        self, chunk_results: List[Tuple[int, List[str]]], contact_face_images: Dict[str, List[str]]
     ) -> Dict[str, InteractionResult]:
-        """Calculate interaction frequencies between contacts"""
+        """Calculate interaction frequencies between contacts and include face images"""
         # Count appearances per contact
         contact_appearances = defaultdict(int)
         # Count co-appearances between contacts
@@ -812,10 +866,14 @@ class FacialRecognitionService:
         # Build final results
         results = {}
         for contact_id, appearances in contact_appearances.items():
+            # Limit face images to avoid response size issues (max 3 images per contact)
+            face_images = contact_face_images.get(contact_id, [])[:3]
+
             results[contact_id] = InteractionResult(
                 contact_id=contact_id,
                 chunk_appearances=appearances,
                 interactions=dict(contact_interactions[contact_id]),
+                face_images=face_images,
             )
 
         return results
@@ -900,6 +958,7 @@ def fastapi_app():
                 interaction_data[contact_id] = InteractionData(
                     chunk_appearances=result.chunk_appearances,
                     interactions=result.interactions,
+                    face_images=result.face_images,
                 )
 
             return AnalyzeVideoResponse(
@@ -930,6 +989,7 @@ def fastapi_app():
                 interaction_data[contact_id] = InteractionData(
                     chunk_appearances=result["chunk_appearances"],
                     interactions=result["interactions"],
+                    face_images=result.get("face_images", []),
                 )
 
             return GetAnalysisResponse(
