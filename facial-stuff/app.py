@@ -596,19 +596,28 @@ class FaceProcessor:
         self,
         face_match_threshold: float = 0.4,  # More lenient threshold (distance ≤ 0.6)
         new_contact_threshold: float = 0.3,
-        frame_skip: int = 3,  # Process every 3rd frame for speed
-        detection_scale: float = 0.5,  # Scale down frames for detection
+        frame_skip: int = 2,  # Process every 2nd frame (was 3)
+        detection_scale: float = 0.75,  # Higher resolution for better detection (was 0.5)
+        face_grouping_threshold: float = 0.4,  # Stricter threshold for grouping faces within chunk
+        min_face_size: int = 30,  # Minimum face size in pixels
+        num_jitters: int = 1,  # Number of times to resample face when generating encoding
     ):
         self.face_match_threshold = face_match_threshold
         self.new_contact_threshold = new_contact_threshold
         self.frame_skip = frame_skip
         self.detection_scale = detection_scale
+        self.face_grouping_threshold = face_grouping_threshold
+        self.min_face_size = min_face_size
+        self.num_jitters = num_jitters
         
         # Log threshold information
-        logger.info(f"🎯 Face matching configuration:")
-        logger.info(f"   Confidence threshold: {self.face_match_threshold:.3f}")
-        logger.info(f"   Corresponding max distance: {1.0 - self.face_match_threshold:.3f}")
-        logger.info(f"   Standard recommendation: confidence ≥ 0.4 (distance ≤ 0.6)")
+        logger.info(f"🎯 Face processing configuration:")
+        logger.info(f"   Match threshold: {self.face_match_threshold:.3f} (max distance: {1.0 - self.face_match_threshold:.3f})")
+        logger.info(f"   Grouping threshold: {self.face_grouping_threshold:.3f} (max distance: {1.0 - self.face_grouping_threshold:.3f})")
+        logger.info(f"   Frame skip: {self.frame_skip} (process every {self.frame_skip}th frame)")
+        logger.info(f"   Detection scale: {self.detection_scale:.2f}")
+        logger.info(f"   Min face size: {self.min_face_size}px")
+        logger.info(f"   Num jitters: {self.num_jitters}")
 
     def extract_frames_from_video_chunk(self, video_chunk_data: bytes) -> List[np.ndarray]:
         """Extract all frames from a video chunk"""
@@ -644,6 +653,9 @@ class FaceProcessor:
     def detect_faces_in_frame(self, frame: np.ndarray, frame_number: int, original_frame: np.ndarray = None) -> List[FaceDetection]:
         """Detect all faces in a single frame with optimization"""
         try:
+            if frame is None or frame.size == 0:
+                logger.warning(f"Empty frame {frame_number}, skipping")
+                return []
             # Scale down frame for detection to improve speed
             if self.detection_scale != 1.0:
                 height, width = frame.shape[:2]
@@ -655,7 +667,12 @@ class FaceProcessor:
                 scale_factor = 1.0
 
             # Find face locations and encodings on scaled frame
-            face_locations = face_recognition.face_locations(detection_frame, model="hog")
+            # Use more accurate detection with better parameters
+            face_locations = face_recognition.face_locations(
+                detection_frame,
+                model="hog",  # "cnn" for better accuracy but slower
+                number_of_times_to_upsample=1  # Better for smaller faces
+            )
 
             # If we scaled down, we need to get encodings from original resolution
             if self.detection_scale != 1.0 and face_locations:
@@ -669,16 +686,44 @@ class FaceProcessor:
                         int(left * scale_factor)
                     ))
                 # Get encodings from original frame at scaled locations
-                face_encodings = face_recognition.face_encodings(frame, scaled_locations)
+                face_encodings = face_recognition.face_encodings(
+                    frame,
+                    scaled_locations,
+                    num_jitters=self.num_jitters
+                )
                 face_locations = scaled_locations
             else:
-                face_encodings = face_recognition.face_encodings(detection_frame, face_locations)
+                face_encodings = face_recognition.face_encodings(
+                    detection_frame,
+                    face_locations,
+                    num_jitters=self.num_jitters
+                )
 
             detections = []
             for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
-                # Calculate confidence based on face detection quality
-                face_area = (right - left) * (bottom - top)
-                confidence = min(1.0, face_area / 5000)  # Adjusted threshold for scaled detection
+                # Calculate face dimensions
+                face_width = right - left
+                face_height = bottom - top
+                face_area = face_width * face_height
+
+                # Filter out faces that are too small
+                if face_width < self.min_face_size or face_height < self.min_face_size:
+                    continue
+
+                # Improved confidence calculation
+                # Consider both face size and aspect ratio
+                aspect_ratio = face_width / face_height if face_height > 0 else 0
+                aspect_penalty = abs(aspect_ratio - 1.0)  # Faces should be roughly square
+
+                # Size-based confidence (normalize by detection scale)
+                size_confidence = min(1.0, face_area / (3000 / (self.detection_scale ** 2)))
+
+                # Aspect ratio penalty (good faces have aspect ratio near 1.0)
+                aspect_confidence = max(0.0, 1.0 - aspect_penalty)
+
+                # Combined confidence
+                confidence = (size_confidence * 0.7) + (aspect_confidence * 0.3)
+                confidence = max(0.1, min(1.0, confidence))  # Clamp between 0.1 and 1.0
 
                 detection = FaceDetection(
                     face_encoding=face_encoding,
@@ -700,16 +745,39 @@ class FaceProcessor:
 
         frames = self.extract_frames_from_video_chunk(video_chunk_data)
 
+        if not frames:
+            logger.warning("No frames extracted from video chunk")
+            return []
+
         # Process only every Nth frame for speed optimization
         selected_frames = frames[::self.frame_skip]
+        logger.info(f"Processing {len(selected_frames)}/{len(frames)} frames (skip={self.frame_skip})")
+
+        # Track detection quality for adaptive processing
+        detection_count = 0
+        low_quality_frames = 0
 
         for i, frame in enumerate(selected_frames):
             # Calculate the actual frame number in the original sequence
             actual_frame_number = i * self.frame_skip
             detections = self.detect_faces_in_frame(frame, actual_frame_number)
+
+            # Track detection quality
+            if detections:
+                detection_count += len(detections)
+                avg_confidence = sum(d.confidence for d in detections) / len(detections)
+                if avg_confidence < 0.5:
+                    low_quality_frames += 1
+
             all_detections.extend(detections)
 
-        logger.info(f"Detected {len(all_detections)} total faces across {len(selected_frames)}/{len(frames)} frames (skip={self.frame_skip})")
+        # Log detection statistics
+        logger.info(f"Face detection statistics:")
+        logger.info(f"  Total detections: {len(all_detections)}")
+        logger.info(f"  Frames processed: {len(selected_frames)}/{len(frames)}")
+        logger.info(f"  Avg detections per frame: {detection_count/len(selected_frames):.2f}" if selected_frames else 0)
+        logger.info(f"  Low quality frames: {low_quality_frames}/{len(selected_frames)}")
+
         return all_detections
 
     def match_face_to_profiles(
@@ -823,14 +891,39 @@ class FaceProcessor:
                 # Load and process the image
                 image = face_recognition.load_image_file(temp_path)
 
-                # Find face encodings
-                encodings = face_recognition.face_encodings(image)
+                # Find face locations first to ensure we're getting good quality faces
+                face_locations = face_recognition.face_locations(
+                    image,
+                    model="hog",
+                    number_of_times_to_upsample=1
+                )
 
-                if not encodings:
+                if not face_locations:
                     raise ValueError("No face found in the uploaded image")
 
+                # Generate face encodings with better parameters
+                encodings = face_recognition.face_encodings(
+                    image,
+                    face_locations,
+                    num_jitters=2  # More jitters for profile photos = better accuracy
+                )
+
+                if not encodings:
+                    raise ValueError("Could not generate face encoding from detected face")
+
                 if len(encodings) > 1:
-                    logger.warning("Multiple faces found in image, using the first one")
+                    # If multiple faces, choose the largest one (likely the main subject)
+                    largest_face_idx = 0
+                    largest_area = 0
+
+                    for i, (top, right, bottom, left) in enumerate(face_locations):
+                        area = (right - left) * (bottom - top)
+                        if area > largest_area:
+                            largest_area = area
+                            largest_face_idx = i
+
+                    logger.warning(f"Multiple faces found in image, using largest face (face {largest_face_idx + 1}/{len(encodings)})")
+                    return encodings[largest_face_idx]
 
                 return encodings[0]
 
@@ -843,19 +936,22 @@ class FaceProcessor:
         if not face_detections:
             return []
 
+        # Sort detections by confidence (highest first) to prioritize better detections
+        sorted_detections = sorted(face_detections, key=lambda x: x.confidence, reverse=True)
+
         groups = []
         used = set()
 
-        for i, detection in enumerate(face_detections):
-            if i in used:
+        for i, detection in enumerate(sorted_detections):
+            if id(detection) in used:
                 continue
 
             current_group = [detection]
-            used.add(i)
+            used.add(id(detection))
 
             # Compare with remaining faces
-            for j, other_detection in enumerate(face_detections[i+1:], i+1):
-                if j in used:
+            for j, other_detection in enumerate(sorted_detections[i+1:], i+1):
+                if id(other_detection) in used:
                     continue
 
                 # Calculate similarity
@@ -865,13 +961,24 @@ class FaceProcessor:
                 )[0]
 
                 # If faces are similar enough, group them
-                if distance < 0.6:  # Same person threshold
+                # Use stricter threshold to avoid merging different people
+                if distance < self.face_grouping_threshold:  # Same person threshold (0.4)
                     current_group.append(other_detection)
-                    used.add(j)
+                    used.add(id(other_detection))
 
             groups.append(current_group)
 
-        logger.info(f"Grouped {len(face_detections)} detections into {len(groups)} unique faces")
+        # Log detailed grouping information
+        logger.info(f"Face grouping results:")
+        logger.info(f"  Input: {len(face_detections)} detections")
+        logger.info(f"  Output: {len(groups)} unique faces")
+        logger.info(f"  Grouping threshold: {self.face_grouping_threshold}")
+
+        # Log each group's size for debugging
+        for i, group in enumerate(groups):
+            confidence_range = f"{min(d.confidence for d in group):.3f}-{max(d.confidence for d in group):.3f}"
+            logger.info(f"  Group {i+1}: {len(group)} faces (confidence: {confidence_range})")
+
         return groups
 
     def get_best_detection_from_group(self, group: List[FaceDetection]) -> FaceDetection:
@@ -881,6 +988,55 @@ class FaceProcessor:
 
         # Choose the detection with highest confidence
         return max(group, key=lambda d: d.confidence)
+
+    def analyze_face_clustering_quality(self, face_detections: List[FaceDetection], groups: List[List[FaceDetection]]) -> Dict[str, float]:
+        """Analyze the quality of face clustering for debugging purposes"""
+        if not face_detections or not groups:
+            return {}
+
+        total_detections = len(face_detections)
+        total_groups = len(groups)
+
+        # Calculate group size statistics
+        group_sizes = [len(group) for group in groups]
+        avg_group_size = sum(group_sizes) / len(group_sizes)
+        max_group_size = max(group_sizes)
+
+        # Calculate confidence statistics
+        all_confidences = [d.confidence for d in face_detections]
+        avg_confidence = sum(all_confidences) / len(all_confidences)
+        min_confidence = min(all_confidences)
+        max_confidence = max(all_confidences)
+
+        # Calculate inter-group distances (how different are the groups?)
+        inter_group_distances = []
+        for i, group1 in enumerate(groups):
+            best1 = self.get_best_detection_from_group(group1)
+            for j, group2 in enumerate(groups[i+1:], i+1):
+                best2 = self.get_best_detection_from_group(group2)
+                distance = face_recognition.face_distance(
+                    [best1.face_encoding],
+                    best2.face_encoding
+                )[0]
+                inter_group_distances.append(distance)
+
+        avg_inter_group_distance = sum(inter_group_distances) / len(inter_group_distances) if inter_group_distances else 0
+        min_inter_group_distance = min(inter_group_distances) if inter_group_distances else 0
+
+        stats = {
+            "total_detections": total_detections,
+            "total_groups": total_groups,
+            "avg_group_size": avg_group_size,
+            "max_group_size": max_group_size,
+            "avg_confidence": avg_confidence,
+            "min_confidence": min_confidence,
+            "max_confidence": max_confidence,
+            "avg_inter_group_distance": avg_inter_group_distance,
+            "min_inter_group_distance": min_inter_group_distance,
+            "grouping_efficiency": total_groups / total_detections if total_detections > 0 else 0
+        }
+
+        return stats
 
 class FacialRecognitionService:
     def __init__(
@@ -1042,6 +1198,13 @@ class FacialRecognitionService:
                 # Group similar faces within the chunk to avoid duplicates
                 face_groups = self.face_processor.group_faces_in_chunk(face_detections)
 
+                # Analyze clustering quality for debugging
+                if face_detections and face_groups:
+                    clustering_stats = self.face_processor.analyze_face_clustering_quality(face_detections, face_groups)
+                    logger.info(f"  📈 Clustering stats: groups={clustering_stats.get('total_groups', 0)}, "
+                               f"efficiency={clustering_stats.get('grouping_efficiency', 0):.2f}, "
+                               f"avg_inter_distance={clustering_stats.get('avg_inter_group_distance', 0):.3f}")
+
                 # Process each unique face in the chunk
                 chunk_profile_ids = set()
 
@@ -1081,8 +1244,27 @@ class FacialRecognitionService:
             logger.info("Calculating interactions and frequencies")
             interaction_results = self._calculate_profile_interactions(chunk_results, profile_face_images, profile_info)
 
-            # Step 5: Track interactions between detected profiles
+            # Step 5: Track interactions between detected profiles AND with requester
             detected_profile_ids = list(interaction_results.keys())
+
+            # First, create interactions between requester and all detected profiles
+            # (The requester uploaded the video, so they interacted with everyone in it)
+            for detected_profile_id in detected_profile_ids:
+                if detected_profile_id != requester_user_id:  # Don't create self-interaction
+                    # Get the total chunks this profile appeared in as interaction strength
+                    profile_chunks = interaction_results[detected_profile_id].chunk_appearances
+
+                    # Upsert interaction between requester and detected profile
+                    self.supabase_client.upsert_interaction(requester_user_id, detected_profile_id, profile_chunks)
+                    new_interactions.append({
+                        "profile_1": requester_user_id,
+                        "profile_2": detected_profile_id,
+                        "shared_chunks": profile_chunks,
+                        "interaction_type": "requester_with_detected"
+                    })
+                    logger.info(f"Recorded {profile_chunks} interactions between requester {requester_user_id} and detected profile {detected_profile_id}")
+
+            # Then, track interactions between detected profiles (existing logic)
             for i, profile_id_1 in enumerate(detected_profile_ids):
                 for profile_id_2 in detected_profile_ids[i + 1:]:
                     # Calculate how many chunks they appeared together in
@@ -1094,7 +1276,8 @@ class FacialRecognitionService:
                         new_interactions.append({
                             "profile_1": profile_id_1,
                             "profile_2": profile_id_2,
-                            "shared_chunks": shared_chunks
+                            "shared_chunks": shared_chunks,
+                            "interaction_type": "detected_with_detected"
                         })
                         logger.info(f"Recorded {shared_chunks} interactions between {profile_id_1} and {profile_id_2}")
 
@@ -1111,7 +1294,13 @@ class FacialRecognitionService:
                 for profile_id, result in interaction_results.items()
             }
 
-            logger.info(f"Analysis complete. Found {len(interaction_results)} profiles, recorded {len(new_interactions)} interactions")
+            # Count different types of interactions for logging
+            requester_interactions = len([i for i in new_interactions if i.get("interaction_type") == "requester_with_detected"])
+            profile_interactions = len([i for i in new_interactions if i.get("interaction_type") == "detected_with_detected"])
+
+            logger.info(f"Analysis complete. Found {len(interaction_results)} profiles, recorded {len(new_interactions)} total interactions")
+            logger.info(f"  - {requester_interactions} interactions between requester and detected profiles")
+            logger.info(f"  - {profile_interactions} interactions between detected profiles")
             return video_id, len(chunks), interaction_results, new_interactions
 
         except Exception as e:
@@ -1217,8 +1406,11 @@ supabase_secret = modal.Secret.from_name(
     image=image,
     secrets=[supabase_secret],
     timeout=1800,  # 30 minutes for long video processing
-    memory=4096,   # More memory for face processing
+    memory=8192,   # Increased memory for better face processing (8GB)
+    cpu=4,         # Multiple CPU cores for parallel processing
     min_containers=1,
+    max_containers=4,  # Allow scaling for concurrent requests
+    scaledown_window=300,  # Keep containers warm for 5 minutes
 )
 @modal.asgi_app()
 def fastapi_app():
