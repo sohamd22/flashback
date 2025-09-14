@@ -13,7 +13,7 @@ interface AppHeaderProps {
 }
 
 export default function AppHeader({
-  title = 'Photographic',
+  title = 'Flashback',
   user,
   showBackButton = false,
   onBack,

@@ -21,7 +21,7 @@ export default function OSLayout({
   backgroundType = 'gradient',
   backgroundColor,
   showTopBar = true,
-  topBarTitle = 'PhotoOS',
+  topBarTitle = 'FlashOS',
   showTaskbar = true,
   onLogout,
   windows = [],

@@ -78,7 +78,7 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
           {/* Window Title Bar */}
           <div className="h-6 bg-gradient-to-r from-blue-600 to-blue-800 border-b border-gray-500 flex items-center justify-between px-2">
             <span className="text-xs text-white font-bold">
-              Log On to PhotoOS
+              Log On to FlashOS
             </span>
             <div className="flex gap-1">
               <div className="w-4 h-4 bg-gray-300 border border-gray-600 flex items-center justify-center text-xs font-bold cursor-not-allowed" style={{
@@ -204,7 +204,7 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
             {/* Bottom Status */}
             <div className="mt-4 text-center">
               <div className="text-xs text-gray-600">
-                PhotoOS • Photographic Memory Management System
+                FlashOS • Photographic Memory Management System
               </div>
             </div>
           </div>

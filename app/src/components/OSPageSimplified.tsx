@@ -43,14 +43,14 @@ function useNotifications(profile: any) {
   const [notifications, setNotifications] = useState([
     {
       id: 1,
-      subject: "Welcome to Photographic!",
-      from: "Team Photographic",
+      subject: "Welcome to Flashback!",
+      from: "Team Flashback",
       preview: "Learn how to use your new photo memory platform...",
       isRead: false, // Start with unread to avoid hydration mismatch
-      content: `Welcome to Photographic!
+      content: `Welcome to Flashback!
 
 Hi ${profile?.name || 'there'}! We're excited to have you on board. 
-Here's how to get started with Photographic:
+Here's how to get started with Flashback:
 
 > VIDEOS FOLDER
   Double-click the Videos folder on your desktop to explore 
@@ -64,7 +64,7 @@ Here's how to get started with Photographic:
 
 Questions? Just reply to this email - we're here to help!
 
-- Team Photographic`
+- Team Flashback`
     }
   ]);
   

@@ -185,7 +185,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           {/* Window Title Bar */}
           <div className="h-6 bg-gradient-to-r from-blue-600 to-blue-800 border-b border-gray-500 flex items-center justify-between px-2">
             <span className="text-xs text-white font-bold">
-              PhotoOS User Setup Wizard
+              FlashOS User Setup Wizard
             </span>
             <div className="flex gap-1">
               <div className="w-4 h-4 bg-gray-300 border border-gray-600 flex items-center justify-center text-xs font-bold cursor-not-allowed" style={{
@@ -201,10 +201,12 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               <div className="w-12 h-12 mx-auto mb-3 bg-gray-400 border-2 border-gray-600 rounded flex items-center justify-center" style={{
                 boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
               }}>
-                <div className="text-lg"><img src="/icons/photo_logo.png" alt="User" className="w-full h-full object-cover" /></div>
+                <div className="text-lg" style={{
+                  paddingRight: '4px'
+                }}><img src="/icons/photo_logo.png" alt="User" className="w-full h-full object-cover" /></div>
               </div>
               <div className="text-sm text-gray-800 font-bold mb-1">
-                Welcome to PhotoOS Setup
+                Welcome to FlashOS Setup
               </div>
               <div className="text-xs text-gray-600">
                 Please complete your user profile
@@ -356,7 +358,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             {/* Bottom Status */}
             <div className="mt-4 text-center">
               <div className="text-xs text-gray-600">
-                PhotoOS Setup • Step 1 of 1
+                FlashOS Setup • Step 1 of 1
               </div>
             </div>
           </div>
@@ -371,7 +373,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               {/* Window Title Bar */}
               <div className="h-6 bg-gradient-to-r from-blue-600 to-blue-800 border-b border-gray-500 flex items-center justify-between px-2">
                 <span className="text-xs text-white font-bold">
-                  Camera Capture - PhotoOS
+                  Camera Capture - FlashOS
                 </span>
                 <button
                   onClick={stopCamera}

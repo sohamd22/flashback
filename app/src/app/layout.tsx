@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Photographic",
-  description: "Your photo management app",
+  title: "Flashback",
+  description: "Social Media without Screens",
   icons: {
     icon: '/icons/photo_logo.png',
     shortcut: '/icons/photo_logo.png',
