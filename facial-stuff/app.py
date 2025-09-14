@@ -134,7 +134,7 @@ class SupabaseClient:
                 update_data["reference_image"] = reference_image
 
             result = (
-                self.client.table("profiles")
+                self.client.table("profiles_images")
                 .update(update_data)
                 .eq("id", profile_id)
                 .execute()
@@ -151,9 +151,9 @@ class SupabaseClient:
         """Get all profiles that have profile photos"""
         try:
             result = (
-                self.client.table("profiles")
+                self.client.table("profiles_images")
                 .select("id, name, email, face_encoding, reference_image, video_ids, profile_photo")
-                .not_("profile_photo", "is", "null")
+                .neq("profile_photo", None)
                 .execute()
             )
 
@@ -178,7 +178,7 @@ class SupabaseClient:
         """Get specific profiles by their IDs"""
         try:
             result = (
-                self.client.table("profiles")
+                self.client.table("profiles_images")
                 .select("id, name, email, face_encoding, reference_image, video_ids, profile_photo")
                 .in_("id", profile_ids)
                 .execute()
@@ -254,7 +254,7 @@ class SupabaseClient:
         try:
             # First get current video_ids
             result = (
-                self.client.table("profiles")
+                self.client.table("profiles_images")
                 .select("video_ids")
                 .eq("id", profile_id)
                 .single()
@@ -269,7 +269,7 @@ class SupabaseClient:
 
                 # Update the profile
                 update_result = (
-                    self.client.table("profiles")
+                    self.client.table("profiles_images")
                     .update({"video_ids": current_video_ids, "updated_at": datetime.now().isoformat()})
                     .eq("id", profile_id)
                     .execute()
