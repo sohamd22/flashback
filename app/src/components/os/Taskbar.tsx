@@ -16,7 +16,7 @@ interface TaskbarProps {
 
 export default function Taskbar({ windows, currentTime, onWindowClick, onLogout }: TaskbarProps) {
   return (
-    <div className="absolute bottom-0 left-0 right-0 bg-neutral-800 border-t-4 border-neutral-900 flex items-center justify-between" style={{
+    <div className="absolute bottom-0 left-0 right-0 h-12 bg-neutral-800 border-t-4 border-neutral-900 flex items-center justify-between z-50" style={{
       boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.5), inset 2px 2px 0px rgba(255, 255, 255, 0.3)'
     }}>
       {/* Start Menu */}
