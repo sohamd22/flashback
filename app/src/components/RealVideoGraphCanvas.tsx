@@ -3,9 +3,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useVideoAPI, VideoClip } from '@/hooks/useVideoAPI';
 import { User } from '@/lib/auth';
-import RetroVideoPlayer from './RetroVideoPlayer';
-import { StarsBackground } from '@/components/ui/StarsBackground';
-import { ShootingStars } from '@/components/ui/ShootingStar';
 
 interface RealVideoGraphCanvasProps {
   user: User;
@@ -13,6 +10,14 @@ interface RealVideoGraphCanvasProps {
   height: number;
   favouritesOnly?: boolean;
   onOpenVideoPlayer?: (video: VideoClip) => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
+  onSearch?: (query: string) => void;
+  onUpload?: (file: File) => void;
+  uploadFile?: File | null;
+  loading?: boolean;
+  error?: string | null;
+  externalVideos?: VideoClip[];
 }
 
 export default function RealVideoGraphCanvas({ 
@@ -20,13 +25,28 @@ export default function RealVideoGraphCanvas({
   width, 
   height, 
   favouritesOnly = false,
-  onOpenVideoPlayer 
+  onOpenVideoPlayer,
+  searchQuery: externalSearchQuery = '',
+  onSearchQueryChange,
+  onSearch,
+  onUpload,
+  uploadFile: externalUploadFile = null,
+  loading: externalLoading = false,
+  error: externalError = null,
+  externalVideos = null
 }: RealVideoGraphCanvasProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [videos, setVideos] = useState<VideoClip[]>([]);
+  // Use internal state as fallback if external props are not provided
+  const [internalSearchQuery, setInternalSearchQuery] = useState('');
+  const [internalUploadFile, setInternalUploadFile] = useState<File | null>(null);
+  
+  const searchQuery = onSearchQueryChange ? externalSearchQuery : internalSearchQuery;
+  const uploadFile = onUpload ? externalUploadFile : internalUploadFile;
+  
+  const [internalVideos, setInternalVideos] = useState<VideoClip[]>([]);
+  
+  // Use external videos if provided, otherwise use internal state
+  const videos = externalVideos || internalVideos;
   const [favorites, setFavorites] = useState<{ [key: string]: boolean }>({});
-  const [selectedVideo, setSelectedVideo] = useState<VideoClip | null>(null);
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [dragState, setDragState] = useState<{
     isDragging: boolean;
     nodeId: string | null;
@@ -40,12 +60,14 @@ export default function RealVideoGraphCanvas({
     originalPosition: { x: 0, y: 0 },
     hasDragged: false
   });
+  
+  const [isDragOver, setIsDragOver] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
   const animationRef = useRef<number>(0);
   
   const { 
-    loading, 
-    error, 
+    loading: internalLoading, 
+    error: internalError, 
     uploadVideo, 
     searchVideos, 
     listAllVideos,
@@ -54,18 +76,23 @@ export default function RealVideoGraphCanvas({
     removeFromFavorites, 
     checkFavorites 
   } = useVideoAPI();
+  
+  const loading = externalLoading || internalLoading;
+  const error = externalError || internalError;
 
-  // Load initial data
+  // Load initial data (only if not using external videos)
   useEffect(() => {
+    if (externalVideos) return; // Don't load if external videos are provided
+    
     const loadData = async () => {
       try {
         if (favouritesOnly) {
           const favs = await listFavorites();
-          setVideos(favs);
+          setInternalVideos(favs);
         } else {
           // For default view, load all videos
           const allVideos = await listAllVideos();
-          setVideos(allVideos);
+          setInternalVideos(allVideos);
         }
       } catch (err) {
         console.error('Error loading data:', err);
@@ -73,7 +100,7 @@ export default function RealVideoGraphCanvas({
     };
 
     loadData();
-  }, [favouritesOnly, listFavorites, listAllVideos]);
+  }, [favouritesOnly, listFavorites, listAllVideos, externalVideos]);
 
   // Check favorites status for current videos
   useEffect(() => {
@@ -94,40 +121,52 @@ export default function RealVideoGraphCanvas({
     }
   }, [videos, checkFavorites, favouritesOnly]);
 
-  // Handle manual search (triggered by Enter key)
+  // Handle manual search (triggered by search button)
   const handleSearch = async () => {
     if (favouritesOnly) return;
     
-    try {
-      if (searchQuery.trim()) {
-        const results = await searchVideos(searchQuery, 20);
-        setVideos(results.clips);
-      } else {
-        // When search is cleared, reload all videos
-        const allVideos = await listAllVideos();
-        setVideos(allVideos);
+    if (onSearch) {
+      // Use external search handler
+      onSearch(searchQuery);
+    } else {
+      // Use internal search logic
+      try {
+        if (searchQuery.trim()) {
+          const results = await searchVideos(searchQuery, 20);
+          setInternalVideos(results.clips);
+        } else {
+          // When search is cleared, reload all videos
+          const allVideos = await listAllVideos();
+          setInternalVideos(allVideos);
+        }
+      } catch (err) {
+        console.error('Search error:', err);
       }
-    } catch (err) {
-      console.error('Search error:', err);
     }
   };
 
   const handleUpload = async () => {
     if (!uploadFile) return;
     
-    try {
-      await uploadVideo(uploadFile);
-      setUploadFile(null);
-      // Refresh the current view
-      if (favouritesOnly) {
-        const favs = await listFavorites();
-        setVideos(favs);
-      } else {
-        const allVideos = await listAllVideos();
-        setVideos(allVideos);
+    if (onUpload) {
+      // Use external upload handler
+      onUpload(uploadFile);
+    } else {
+      // Use internal upload logic
+      try {
+        await uploadVideo(uploadFile);
+        setInternalUploadFile(null);
+        // Refresh the current view
+        if (favouritesOnly) {
+          const favs = await listFavorites();
+          setInternalVideos(favs);
+        } else {
+          const allVideos = await listAllVideos();
+          setInternalVideos(allVideos);
+        }
+      } catch (err) {
+        console.error('Upload error:', err);
       }
-    } catch (err) {
-      console.error('Upload error:', err);
     }
   };
 
@@ -140,8 +179,8 @@ export default function RealVideoGraphCanvas({
         setFavorites(prev => ({ ...prev, [video.chunk_id]: false }));
         
         // If we're in favorites view, remove from the list
-        if (favouritesOnly) {
-          setVideos(prev => prev.filter(v => v.chunk_id !== video.chunk_id));
+        if (favouritesOnly && !externalVideos) {
+          setInternalVideos(prev => prev.filter(v => v.chunk_id !== video.chunk_id));
         }
       } else {
         await addToFavorites(
@@ -270,12 +309,58 @@ export default function RealVideoGraphCanvas({
     animationRef.current = requestAnimationFrame(animate);
   };
 
+  // Drag and drop handlers for file upload
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    const videoFile = files.find(file => file.type.startsWith('video/'));
+    
+    if (videoFile) {
+      if (onUpload) {
+        onUpload(videoFile);
+      } else {
+        setInternalUploadFile(videoFile);
+        handleUpload();
+      }
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (onUpload) {
+        onUpload(file);
+      } else {
+        setInternalUploadFile(file);
+        handleUpload();
+      }
+    }
+  };
+
   return (
     <div 
       className="relative"
       style={{ width, height, imageRendering: 'pixelated' }}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       {/* Pixelated sky background with sun and clouds */}
       <div 
@@ -396,82 +481,6 @@ export default function RealVideoGraphCanvas({
         }
       `}</style>
 
-      {/* Pixelated light mode header */}
-      <div className="absolute top-4 left-4 right-4 z-30">
-        <div 
-          className="bg-white border-4 border-gray-400 p-3"
-          style={{
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            imageRendering: 'pixelated',
-            boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,1), 4px 4px 0px rgba(0,0,0,0.2)'
-          }}
-        >
-          <div className="flex items-center gap-3 mb-2">
-            {/* <div className="text-gray-800 font-bold text-sm">
-              {favouritesOnly ? '⭐ FAVORITES' : '🎬 ALL VIDEOS'}
-            </div> */}
-            {loading && <div className="text-blue-600 text-xs font-bold">[PROCESSING...]</div>}
-            {error && <div className="text-red-600 text-xs font-bold">[ERROR]</div>}
-          </div>
-          
-          {!favouritesOnly && (
-            <div className="flex items-center gap-2">
-              {/* Pixelated search box */}
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleSearch();
-                  }
-                }}
-                placeholder="Search videos (Enter)..."
-                className="flex-1 px-3 py-2 border-3 border-gray-600 text-gray-800 text-xs"
-                style={{ 
-                  fontFamily: 'monospace',
-                  imageRendering: 'pixelated',
-                  boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.2)'
-                }}
-              />
-              
-              {/* Retro upload button */}
-              <input
-                type="file"
-                accept="video/*"
-                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                className="hidden"
-                id="video-upload"
-              />
-              <label 
-                htmlFor="video-upload"
-                className="px-3 py-1 bg-blue-600 border-2 border-blue-400 text-white text-xs cursor-pointer hover:bg-blue-500 font-bold"
-                style={{ imageRendering: 'pixelated' }}
-              >
-                [LOAD]
-              </label>
-              
-              {uploadFile && (
-                <button
-                  onClick={handleUpload}
-                  disabled={loading}
-                  className="px-3 py-1 bg-red-600 border-2 border-red-400 text-white text-xs hover:bg-red-500 disabled:opacity-50 font-bold animate-pulse"
-                  style={{ imageRendering: 'pixelated' }}
-                >
-                  [UPLOAD]
-                </button>
-              )}
-            </div>
-          )}
-          
-          {uploadFile && (
-            <div className="mt-2 text-xs text-gray-600 font-bold">
-              📄 {uploadFile.name}
-            </div>
-          )}
-        </div>
-      </div>
       {/* Clean pixelated user node in center */}
       <div
         className="absolute transform -translate-x-1/2 -translate-y-1/2"
@@ -527,6 +536,7 @@ export default function RealVideoGraphCanvas({
             y2={video.y}
             stroke="#9ca3af"
             strokeWidth="2"
+            strokeDasharray="5,5"
             opacity="0.3"
           />
         </svg>
@@ -554,8 +564,6 @@ export default function RealVideoGraphCanvas({
                 if (!dragState.isDragging && !(dragState.nodeId === video.chunk_id && dragState.hasDragged)) {
                   if (onOpenVideoPlayer) {
                     onOpenVideoPlayer(video);
-                  } else {
-                    setSelectedVideo(video);
                   }
                 }
               }, 50);
@@ -607,15 +615,17 @@ export default function RealVideoGraphCanvas({
                   background: favorites[video.chunk_id] ? 'linear-gradient(135deg, #fef3c7, #fbbf24)' : 'linear-gradient(135deg, #bfdbfe, #3b82f6)'
                 }}
               >
-                {/* Video thumbnail or fallback emoji */}
-                <img 
+                {/* Non-playable video element */}
+                <video 
                   src={video.video_url || video.url}
-                  alt={`Video ${index + 1}`}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover pointer-events-none"
                   style={{ imageRendering: 'pixelated' }}
+                  muted
+                  loop
+                  preload="metadata"
                   onError={(e) => {
-                    // Replace with fallback emoji if thumbnail fails
-                    const target = e.target as HTMLImageElement;
+                    // Replace with fallback emoji if video fails
+                    const target = e.target as HTMLVideoElement;
                     target.style.display = 'none';
                     const parent = target.parentElement;
                     if (parent && !parent.querySelector('.fallback-emoji')) {
@@ -626,15 +636,17 @@ export default function RealVideoGraphCanvas({
                       parent.appendChild(fallback);
                     }
                   }}
-                  onLoad={(e) => {
-                    // Remove any existing fallback when image loads successfully
-                    const target = e.target as HTMLImageElement;
+                  onLoadedData={(e) => {
+                    // Remove any existing fallback when video loads successfully
+                    const target = e.target as HTMLVideoElement;
                     const parent = target.parentElement;
                     const existingFallback = parent?.querySelector('.fallback-emoji');
                     if (existingFallback) {
                       existingFallback.remove();
                     }
                     target.style.display = 'block';
+                    // Show first frame
+                    target.currentTime = 0.1;
                   }}
                 />
               </div>
@@ -686,7 +698,16 @@ export default function RealVideoGraphCanvas({
 
       {/* Clean empty state */}
       {videos.length === 0 && !loading && (
-        <div className="absolute inset-0 flex items-center justify-center" style={{ zIndex: 2 }}>
+        <div 
+          className="absolute flex items-center justify-center" 
+          style={{ 
+            top: height * 0.15,
+            left: width * 0.2,
+            width: width * 0.6,
+            height: height * 0.3,
+            zIndex: 2 
+          }}
+        >
           <div 
             className="text-center bg-white border-4 border-gray-600 p-6"
             style={{
@@ -714,6 +735,51 @@ export default function RealVideoGraphCanvas({
                 <div className="text-xs text-gray-600">Use the controls above to get started</div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Drag and drop upload area */}
+      {!favouritesOnly && (
+        <div className="absolute bottom-4 left-4 z-20">
+          <input
+            type="file"
+            accept="video/*"
+            onChange={handleFileSelect}
+            className="hidden"
+            id="video-upload"
+          />
+          <label
+            htmlFor="video-upload"
+            className={`flex items-center justify-center w-16 h-16 cursor-pointer hover:scale-105 transition-transform ${
+              isDragOver 
+                ? 'border-4 border-green-600 bg-green-100' 
+                : loading 
+                ? 'border-4 border-orange-600 bg-orange-100' 
+                : 'border-4 border-gray-600 bg-gray-100'
+            }`}
+            style={{
+              imageRendering: 'pixelated',
+              boxShadow: 'inset -3px -3px 0px rgba(0,0,0,0.3), inset 3px 3px 0px rgba(255,255,255,1), 4px 4px 0px rgba(0,0,0,0.2)'
+            }}
+          >
+            {loading ? (
+              <div className="text-2xl animate-spin">⏳</div>
+            ) : isDragOver ? (
+              <div className="text-2xl">⬇️</div>
+            ) : (
+              <div className="text-2xl">📹</div>
+            )}
+          </label>
+          <div 
+            className="text-center text-gray-800 text-xs mt-1 font-bold bg-white border-2 border-gray-400 px-2 py-1"
+            style={{
+              fontFamily: 'monospace',
+              imageRendering: 'pixelated',
+              boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,1)'
+            }}
+          >
+            UPLOAD
           </div>
         </div>
       )}
@@ -757,19 +823,6 @@ export default function RealVideoGraphCanvas({
         </div>
       </div>
 
-      {/* Video player modal */}
-      {selectedVideo && (
-        <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <RetroVideoPlayer
-            video={selectedVideo}
-            width={Math.min(600, width - 40)}
-            height={Math.min(400, height - 100)}
-            onClose={() => setSelectedVideo(null)}
-            onToggleFavorite={handleToggleFavorite}
-            isFavorite={favorites[selectedVideo.chunk_id]}
-          />
-        </div>
-      )}
     </div>
   );
 }

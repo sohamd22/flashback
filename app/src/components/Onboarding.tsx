@@ -174,122 +174,142 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
   return (
     <OSLayout
-      backgroundType="gradient"
-      showTopBar={true}
-      topBarTitle="PhotoOS - Setup"
+      backgroundType="wallpaper"
+      showTopBar={false}
       showTaskbar={true}
     >
       <div className="flex items-center justify-center h-full">
-        <div className="bg-gray-100 border-2 border-gray-600 shadow-2xl w-[500px]">
+        <div className="bg-gray-300 border-2 border-gray-600 w-96" style={{
+          boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.5), inset 2px 2px 0px rgba(255,255,255,0.8), 4px 4px 10px rgba(0,0,0,0.3)'
+        }}>
           {/* Window Title Bar */}
-          <div className="h-8 bg-gradient-to-r from-gray-300 to-gray-400 border-b-2 border-gray-600 flex items-center justify-between px-2">
-            <span className="text-sm font-bold text-gray-800">
-              Profile Setup
+          <div className="h-6 bg-gradient-to-r from-blue-600 to-blue-800 border-b border-gray-500 flex items-center justify-between px-2">
+            <span className="text-xs text-white font-bold">
+              PhotoOS User Setup Wizard
             </span>
             <div className="flex gap-1">
-              <div className="w-6 h-6 bg-red-400 border border-red-600 flex items-center justify-center text-xs font-bold">×</div>
+              <div className="w-4 h-4 bg-gray-300 border border-gray-600 flex items-center justify-center text-xs font-bold cursor-not-allowed" style={{
+                boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,0.8)'
+              }}>×</div>
             </div>
           </div>
 
           {/* Window Content */}
-          <div className="p-8 bg-white">
-            <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-800 mb-2">
-                Welcome to Photographic
-              </h1>
-              <p className="text-gray-600 text-sm">
-                Complete your profile setup
-              </p>
+          <div className="p-6 bg-gray-300">
+            {/* Header */}
+            <div className="text-center mb-6">
+              <div className="w-12 h-12 mx-auto mb-3 bg-gray-400 border-2 border-gray-600 rounded flex items-center justify-center" style={{
+                boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
+              }}>
+                <div className="text-lg"><img src="/icons/photo_logo.png" alt="User" className="w-full h-full object-cover" /></div>
+              </div>
+              <div className="text-sm text-gray-800 font-bold mb-1">
+                Welcome to PhotoOS Setup
+              </div>
+              <div className="text-xs text-gray-600">
+                Please complete your user profile
+              </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Name Field */}
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  Your Name:
+                <label className="block text-xs text-gray-800 mb-1 font-bold">
+                  Full name:
                 </label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 border-2 border-gray-400 focus:border-blue-500 focus:outline-none bg-white text-black"
+                  className="w-full px-2 py-1 text-sm bg-white border-2 border-gray-600 focus:outline-none text-black"
+                  style={{
+                    boxShadow: 'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)'
+                  }}
                   placeholder="Enter your full name"
                   disabled={isLoading}
                 />
               </div>
 
+              {/* Profile Photo Section */}
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  Profile Photo:
+                <label className="block text-xs text-gray-800 mb-1 font-bold">
+                  Profile picture:
                 </label>
 
                 <div
-                  className={`relative border-2 border-gray-400 p-6 text-center transition-all duration-200 bg-gray-50 ${
-                    dragActive
-                      ? 'border-blue-500 bg-gray-100'
-                      : 'hover:border-gray-500'
+                  className={`relative border-2 border-gray-600 p-4 text-center bg-gray-200 ${
+                    dragActive ? 'bg-gray-100' : ''
                   }`}
-              onDrop={handleDrop}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragActive(true);
-              }}
-              onDragLeave={() => setDragActive(false)}
-            >
+                  style={{
+                    boxShadow: 'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)'
+                  }}
+                  onDrop={handleDrop}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragActive(true);
+                  }}
+                  onDragLeave={() => setDragActive(false)}
+                >
                   {profilePhoto ? (
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                       <div className="relative inline-block">
                         <img
                           src={profilePhoto}
                           alt="Profile preview"
-                          className="w-32 h-32 object-cover border-2 border-gray-400 mx-auto"
-                          style={{ imageRendering: 'auto' }}
+                          className="w-24 h-24 object-cover border-2 border-gray-600 mx-auto"
+                          style={{ 
+                            imageRendering: 'auto',
+                            boxShadow: 'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)'
+                          }}
                         />
                         <button
                           type="button"
                           onClick={() => {
                             setProfilePhoto(null);
                           }}
-                          className="absolute -top-2 -right-2 w-6 h-6 bg-gray-300 border-2 border-gray-600 flex items-center justify-center text-xs font-bold hover:bg-gray-400"
+                          className="absolute -top-1 -right-1 w-4 h-4 bg-gray-300 border border-gray-600 flex items-center justify-center text-xs font-bold hover:bg-gray-400"
                           style={{
                             boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,0.8)'
                           }}
                         >
-                          X
+                          ×
                         </button>
                       </div>
-                      <p className="text-green-600 text-sm font-bold">
-                        ✓ Photo uploaded successfully
-                      </p>
+                      <div className="text-xs text-gray-700">
+                        Picture loaded successfully
+                      </div>
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      <div className="w-24 h-24 bg-gray-200 border-2 border-gray-400 mx-auto flex items-center justify-center">
-                        <svg className="w-10 h-10 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                        </svg>
+                    <div className="space-y-3">
+                      <div className="w-16 h-16 bg-gray-400 border-2 border-gray-600 mx-auto flex items-center justify-center" style={{
+                        boxShadow: 'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)'
+                      }}>
+                        <div className="text-lg">📷</div>
                       </div>
-                      <div>
-                        <p className="text-gray-700 mb-2">
-                          Drop your photo here, or{' '}
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="text-blue-600 underline hover:text-blue-800"
-                          >
-                            browse
-                          </button>
-                          {' '}or{' '}
-                          <button
-                            type="button"
-                            onClick={startCamera}
-                            className="text-blue-600 underline hover:text-blue-800"
-                          >
-                            take photo
-                          </button>
-                        </p>
-                        <p className="text-gray-500 text-xs">
-                          JPG, PNG, GIF, WebP up to 5MB (HEIC not supported)
-                        </p>
+                      <div className="text-xs text-gray-800">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="text-xs px-2 py-1 bg-gray-300 border border-gray-600 hover:bg-gray-200 mr-1"
+                          style={{
+                            boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,0.8)'
+                          }}
+                        >
+                          Browse...
+                        </button>
+                        <button
+                          type="button"
+                          onClick={startCamera}
+                          className="text-xs px-2 py-1 bg-gray-300 border border-gray-600 hover:bg-gray-200"
+                          style={{
+                            boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,0.8)'
+                          }}
+                        >
+                          Camera
+                        </button>
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        JPG, PNG, GIF formats supported (max 5MB)
                       </div>
                     </div>
                   )}
@@ -307,68 +327,78 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                 </div>
               </div>
 
+              {/* Error Message */}
               {error && (
-                <div className="bg-red-100 border-2 border-red-400 text-red-700 px-3 py-2 text-sm">
-                  {error}
+                <div className="bg-gray-200 border border-gray-600 text-red-800 px-2 py-2 text-xs" style={{
+                  boxShadow: 'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)'
+                }}>
+                  ⚠ {error}
                 </div>
               )}
 
-              <div className="pt-4">
+              {/* Buttons */}
+              <div className="pt-4 flex justify-center gap-3">
                 <button
                   type="submit"
                   disabled={isLoading || !name.trim() || !profilePhoto}
-                  className="w-full px-4 py-2 bg-gray-300 border-2 border-gray-600 text-black font-bold hover:bg-gray-400 focus:outline-none transition-all duration-150 disabled:opacity-50"
+                  className="px-6 py-2 bg-gray-300 border-2 border-gray-600 text-black text-xs font-bold hover:bg-gray-200 focus:outline-none disabled:opacity-50 cursor-pointer"
                   style={{
-                    boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
+                    boxShadow: isLoading ? 
+                      'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)' :
+                      'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
                   }}
                 >
-                  {isLoading ? (
-                    <span className="flex items-center justify-center">
-                      <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin mr-2"></div>
-                      Completing Setup...
-                    </span>
-                  ) : (
-                    'Complete Setup'
-                  )}
+                  {isLoading ? 'Setting up...' : 'Finish'}
                 </button>
               </div>
             </form>
 
-            <div className="mt-6 text-center">
-              <p className="text-xs text-gray-500">
-                PhotoOS v1.0 - Profile Configuration
-              </p>
+            {/* Bottom Status */}
+            <div className="mt-4 text-center">
+              <div className="text-xs text-gray-600">
+                PhotoOS Setup • Step 1 of 1
+              </div>
             </div>
           </div>
         </div>
 
         {/* Camera Modal */}
         {showCamera && (
-          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-            <div className="bg-gray-100 border-2 border-gray-600 shadow-2xl">
+          <div className="fixed inset-0 flex items-center justify-center z-50">
+            <div className="bg-gray-300 border-2 border-gray-600" style={{
+              boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.5), inset 2px 2px 0px rgba(255,255,255,0.8), 4px 4px 10px rgba(0,0,0,0.3)'
+            }}>
               {/* Window Title Bar */}
-              <div className="h-8 bg-gradient-to-r from-gray-300 to-gray-400 border-b-2 border-gray-600 flex items-center justify-between px-2">
-                <span className="text-sm font-bold text-gray-800">
-                  Camera Capture
+              <div className="h-6 bg-gradient-to-r from-blue-600 to-blue-800 border-b border-gray-500 flex items-center justify-between px-2">
+                <span className="text-xs text-white font-bold">
+                  Camera Capture - PhotoOS
                 </span>
                 <button
                   onClick={stopCamera}
-                  className="w-6 h-6 bg-red-400 border border-red-600 flex items-center justify-center text-xs font-bold hover:bg-red-500"
+                  className="w-4 h-4 bg-gray-300 border border-gray-600 flex items-center justify-center text-xs font-bold hover:bg-gray-400"
+                  style={{
+                    boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,0.8)'
+                  }}
                 >
                   ×
                 </button>
               </div>
 
               {/* Camera Content */}
-              <div className="p-4 bg-white">
+              <div className="p-4 bg-gray-300">
                 <div className="relative">
                   <video
                     ref={videoRef}
                     autoPlay
                     playsInline
                     muted
-                    className="border-2 border-gray-400 bg-black"
-                    style={{ width: '640px', height: '480px', objectFit: 'cover' }}
+                    className="border-2 border-gray-600 bg-black"
+                    style={{ 
+                      width: '320px', 
+                      height: '240px', 
+                      objectFit: 'cover',
+                      boxShadow: 'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)'
+                    }}
                   />
                   <canvas
                     ref={canvasRef}
@@ -376,19 +406,19 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                   />
                 </div>
 
-                <div className="mt-4 flex justify-center gap-3">
+                <div className="mt-3 flex justify-center gap-2">
                   <button
                     onClick={capturePhoto}
-                    className="px-6 py-2 bg-blue-500 border-2 border-blue-700 text-white font-bold hover:bg-blue-600"
+                    className="px-4 py-1 bg-gray-300 border-2 border-gray-600 text-black text-xs font-bold hover:bg-gray-200"
                     style={{
-                      boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.3)'
+                      boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
                     }}
                   >
-                    📸 Capture
+                    Capture
                   </button>
                   <button
                     onClick={stopCamera}
-                    className="px-6 py-2 bg-gray-300 border-2 border-gray-600 text-black font-bold hover:bg-gray-400"
+                    className="px-4 py-1 bg-gray-300 border-2 border-gray-600 text-black text-xs font-bold hover:bg-gray-200"
                     style={{
                       boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
                     }}

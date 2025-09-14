@@ -3,12 +3,13 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import RealVideoGraphCanvas from '@/components/RealVideoGraphCanvas';
-import { useVideoAPI } from '@/hooks/useVideoAPI';
+import RetroVideoPlayer from '@/components/RetroVideoPlayer';
+import { useVideoAPI, VideoClip } from '@/hooks/useVideoAPI';
 
 interface FileExplorerProps {
   width: number;
   height: number;
-  onOpenGraphWindow?: (title: string, content: React.ReactNode, icon: string) => void;
+  onOpenGraphWindow?: (title: string, content: React.ReactNode, icon: string, customWidth?: number, customHeight?: number) => void;
 }
 
 interface FolderItem {
@@ -132,14 +133,150 @@ export default function FileExplorer({ width, height, onOpenGraphWindow }: FileE
                   const windowWidth = Math.min(width || 1200, typeof window !== 'undefined' ? window.innerWidth - 100 : 1200);
                   const windowHeight = Math.min(height || 800, typeof window !== 'undefined' ? window.innerHeight - 120 : 800);
                   
+                  // Create a wrapper component with search functionality
+                  const GraphWrapper = () => {
+                    const [searchQuery, setSearchQuery] = useState('');
+                    const [uploadFile, setUploadFile] = useState<File | null>(null);
+                    const { loading, error, uploadVideo, searchVideos, listAllVideos, listFavorites } = useVideoAPI();
+                    const [videos, setVideos] = useState<VideoClip[]>([]);
+
+                    // Load initial videos
+                    useEffect(() => {
+                      const loadInitialVideos = async () => {
+                        try {
+                          if (folder.id === 'favourite') {
+                            const favs = await listFavorites();
+                            setVideos(favs);
+                          } else {
+                            const allVideos = await listAllVideos();
+                            setVideos(allVideos);
+                          }
+                        } catch (err) {
+                          console.error('Error loading initial videos:', err);
+                        }
+                      };
+
+                      loadInitialVideos();
+                    }, [folder.id, listAllVideos, listFavorites]);
+
+                    const handleSearch = async (query?: string) => {
+                      if (folder.id === 'favourite') return;
+                      
+                      const searchTerm = (query != null ? String(query) : searchQuery != null ? String(searchQuery) : '');
+                      try {
+                        if (searchTerm.trim()) {
+                          const results = await searchVideos(searchTerm, 20);
+                          setVideos(results.clips);
+                        } else {
+                          const allVideos = await listAllVideos();
+                          setVideos(allVideos);
+                        }
+                      } catch (err) {
+                        console.error('Search error:', err);
+                      }
+                    };
+
+                    const handleUpload = async (file: File) => {
+                      try {
+                        await uploadVideo(file);
+                        setUploadFile(null);
+                        // Refresh videos after upload
+                        if (folder.id === 'favourite') return;
+                        const allVideos = await listAllVideos();
+                        setVideos(allVideos);
+                      } catch (err) {
+                        console.error('Upload error:', err);
+                      }
+                    };
+
+                    return (
+                      <div className="h-full flex flex-col">
+                        {/* Search bar in taskbar area */}
+                        {folder.id !== 'favourite' && (
+                          <div className="bg-gray-200 border-b border-gray-400 px-2 py-2 flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              placeholder="Search videos..."
+                              className="flex-1 px-3 py-1 border-2 border-gray-600 text-gray-800 text-xs"
+                              style={{ 
+                                fontFamily: 'monospace',
+                                imageRendering: 'pixelated',
+                                boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.2)'
+                              }}
+                            />
+                            <button
+                              onClick={handleSearch}
+                              disabled={loading}
+                              className="px-3 py-1 bg-blue-600 border-2 border-blue-400 text-white text-xs hover:bg-blue-500 disabled:opacity-50 font-bold"
+                              style={{ imageRendering: 'pixelated' }}
+                            >
+                              [SEARCH]
+                            </button>
+                            {loading && <div className="text-blue-600 text-xs font-bold">[PROCESSING...]</div>}
+                            {error && <div className="text-red-600 text-xs font-bold">[ERROR]</div>}
+                          </div>
+                        )}
+                        
+                        <div className="flex-1">
+                          <RealVideoGraphCanvas 
+                            user={profile}
+                            width={windowWidth - 20}
+                            height={windowHeight - (folder.id !== 'favourite' ? 100 : 60)}
+                            favouritesOnly={folder.id === 'favourite'}
+                            onUpload={handleUpload}
+                            uploadFile={uploadFile}
+                            loading={loading}
+                            error={error}
+                            externalVideos={videos}
+                            onOpenVideoPlayer={(video) => {
+                              if (onOpenGraphWindow) {
+                                const playerWidth = 600;
+                                const playerHeight = 400;
+                                
+                                // RetroVideoPlayer adds 20px width and 80px height for its own chrome
+                                const playerComponentWidth = playerWidth + 20;
+                                const playerComponentHeight = playerHeight + 80;
+                                
+                                // Window component adds title bar (40px) and some padding
+                                const windowWidth = playerComponentWidth + 8; // 4px border on each side
+                                const windowHeight = playerComponentHeight + 40 + 8; // title bar + borders
+                                
+                                // Cast to the extended function signature
+                                const openWindowWithCustomSize = onOpenGraphWindow as (
+                                  title: string, 
+                                  content: React.ReactNode, 
+                                  icon: string, 
+                                  customWidth?: number, 
+                                  customHeight?: number
+                                ) => void;
+                                
+                                openWindowWithCustomSize(
+                                  `🎬 Video Player`,
+                                  <RetroVideoPlayer
+                                    video={video}
+                                    width={playerWidth}
+                                    height={playerHeight}
+                                    onClose={() => {}} // Window will handle close
+                                    onToggleFavorite={() => {}} // Could implement if needed
+                                    isFavorite={false}
+                                  />,
+                                  "/icons/blackhole.png",
+                                  windowWidth,
+                                  windowHeight
+                                );
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  };
+
                   onOpenGraphWindow(
                     folder.name === 'favourite' ? '⭐ Favourite Videos - Memory Graph' : '🎬 All Videos - Memory Graph',
-                    <RealVideoGraphCanvas 
-                      user={profile}
-                      width={windowWidth - 20}
-                      height={windowHeight - 60}
-                      favouritesOnly={folder.id === 'favourite'}
-                    />,
+                    <GraphWrapper />,
                     folder.icon === '⭐' ? "/icons/blackhole.png" : "/icons/blackhole.png"
                   );
                 }

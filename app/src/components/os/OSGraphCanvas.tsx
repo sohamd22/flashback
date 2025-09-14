@@ -2,8 +2,6 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { GraphData, GraphNode } from '@/types/graph';
-import UserNode from '@/components/nodes/UserNode';
-import FriendNode from '@/components/nodes/FriendNode';
 
 interface OSGraphCanvasProps {
   data: GraphData;
@@ -175,75 +173,11 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
   };
 
 
-  const renderNode = (node: GraphNode) => {
-    const isDragging = dragState.nodeId === node.id;
-    const isHovered = hoveredNode === node.id;
-    const nodeStyle = getNodeStyle(node);
-    
-    if (node.isUser) {
-      return (
-        <div key={node.id} style={{ ...nodeStyle, zIndex: 10 }}>
-          <UserNode
-            id={node.id}
-            name={node.name}
-            photo={node.photo}
-            x={node.x}
-            y={node.y}
-            isHovered={isHovered}
-            showLabel={isHovered}
-            onClick={onUserClick}
-            onMouseEnter={() => !dragState.isDragging && setHoveredNode(node.id)}
-            onMouseLeave={() => !dragState.isDragging && setHoveredNode(null)}
-          />
-        </div>
-      );
-    }
-    
-    return (
-      <div key={node.id} style={{ ...nodeStyle, zIndex: 5 }}>
-        <FriendNode
-          name={node.name}
-          photo={node.photo}
-          x={node.x}
-          y={node.y}
-          isDragging={isDragging}
-          isHovered={isHovered}
-          onClick={() => {
-            if (!dragState.isDragging && onFriendClick) {
-              onFriendClick(node.id);
-            }
-          }}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            const containerRect = e.currentTarget.parentElement?.getBoundingClientRect();
-            
-            if (!containerRect) return;
-
-            setDragState({
-              isDragging: true,
-              nodeId: node.id,
-              offset: {
-                x: e.clientX - containerRect.left - node.x,
-                y: e.clientY - containerRect.top - node.y
-              },
-              originalPosition: { x: node.x, y: node.y }
-            });
-
-            if (animationRef.current) {
-              cancelAnimationFrame(animationRef.current);
-            }
-          }}
-          onMouseEnter={() => !dragState.isDragging && setHoveredNode(node.id)}
-          onMouseLeave={() => !dragState.isDragging && setHoveredNode(null)}
-        />
-      </div>
-    );
-  };
 
   return (
     <div 
-      className="relative bg-gray-100"
-      style={{ width, height }}
+      className="relative"
+      style={{ width, height, imageRendering: 'pixelated' }}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
@@ -366,43 +300,166 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
         }
       `}</style>
 
+      
+      {/* Clean pixelated user node in center */}
+      <div
+        className="absolute transform -translate-x-1/2 -translate-y-1/2"
+        style={{ 
+          left: width / 2, 
+          top: height / 2,
+          zIndex: 10 
+        }}
+      >
+        <div 
+          className="w-20 h-20 border-4 border-gray-600 bg-white flex items-center justify-center cursor-pointer hover:scale-105 transition-transform"
+          style={{
+            imageRendering: 'pixelated',
+            boxShadow: 'inset -3px -3px 0px rgba(0,0,0,0.3), inset 3px 3px 0px rgba(255,255,255,1), 6px 6px 0px rgba(0,0,0,0.2)'
+          }}
+          onClick={onUserClick}
+        >
+          <img 
+            src={data.nodes.find(n => n.isUser)?.photo || '/icons/user.png'} 
+            alt={data.nodes.find(n => n.isUser)?.name || 'User'}
+            className="w-16 h-16"
+            style={{ imageRendering: 'pixelated' }}
+          />
+        </div>
+        <div 
+          className="text-center text-gray-800 text-xs mt-2 font-bold bg-white border-3 border-gray-600 px-2 py-1"
+          style={{
+            fontFamily: 'monospace',
+            imageRendering: 'pixelated',
+            boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,1)'
+          }}
+        >
+          {data.nodes.find(n => n.isUser)?.name || 'USER'}
+        </div>
+      </div>
+
       {/* Simple connection lines */}
-      {data.connections.map(connection => {
-        const fromNode = nodes.find(n => n.id === connection.fromId);
-        const toNode = nodes.find(n => n.id === connection.toId);
-        
-        if (!fromNode || !toNode) return null;
-        
-        const opacity = Math.min(0.5, Math.max(0.2, (connection.strength || 0) / 10));
+      {nodes.filter(n => !n.isUser).map((node) => (
+        <svg
+          key={`connection-${node.id}`}
+          className="absolute pointer-events-none"
+          style={{ 
+            left: 0, 
+            top: 0, 
+            width: width, 
+            height: height, 
+            zIndex: 1
+          }}
+        >
+          <line
+            x1={width / 2}
+            y1={height / 2}
+            x2={node.x}
+            y2={node.y}
+            stroke="#9ca3af"
+            strokeWidth="2"
+            strokeDasharray="5,5"
+            opacity="0.3"
+          />
+        </svg>
+      ))}
+
+      {/* Friend nodes with video-style design */}
+      {nodes.filter(n => !n.isUser).map((node, index) => {
+        const isDragging = dragState.nodeId === node.id;
+        const isHovered = hoveredNode === node.id;
+        const nodeStyle = getNodeStyle(node);
         
         return (
-          <svg
-            key={`${connection.fromId}-${connection.toId}`}
-            className="absolute pointer-events-none"
+          <div
+            key={node.id}
+            className={`absolute transform -translate-x-1/2 -translate-y-1/2 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
             style={{ 
-              left: 0, 
-              top: 0, 
-              width: width, 
-              height: height, 
-              zIndex: 1 
+              left: node.x, 
+              top: node.y,
+              zIndex: isDragging ? 20 : 5,
+              transform: isDragging ? 'translate(-50%, -50%) scale(1.1)' : 'translate(-50%, -50%) scale(1)',
+              ...nodeStyle
             }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setTimeout(() => {
+                if (!dragState.isDragging && onFriendClick) {
+                  onFriendClick(node.id);
+                }
+              }, 50);
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const containerRect = e.currentTarget.parentElement?.getBoundingClientRect();
+              
+              if (!containerRect) return;
+
+              setDragState({
+                isDragging: true,
+                nodeId: node.id,
+                offset: {
+                  x: e.clientX - containerRect.left - node.x,
+                  y: e.clientY - containerRect.top - node.y
+                },
+                originalPosition: { x: node.x, y: node.y }
+              });
+
+              if (animationRef.current) {
+                cancelAnimationFrame(animationRef.current);
+              }
+            }}
+            onMouseEnter={() => !dragState.isDragging && setHoveredNode(node.id)}
+            onMouseLeave={() => !dragState.isDragging && setHoveredNode(null)}
           >
-            <line
-              x1={fromNode.x}
-              y1={fromNode.y}
-              x2={toNode.x}
-              y2={toNode.y}
-              stroke="#9ca3af"
-              strokeWidth="2"
-              opacity={opacity}
-            />
-          </svg>
+            {/* Clean pixelated friend node */}
+            <div className="relative">
+              <div 
+                className="w-16 h-16 border-4 border-green-600 flex items-center justify-center hover:scale-105 transition-transform overflow-hidden"
+                style={{
+                  imageRendering: 'pixelated',
+                  boxShadow: 'inset -3px -3px 0px rgba(0,0,0,0.3), inset 3px 3px 0px rgba(255,255,255,0.8), 4px 4px 0px rgba(0,0,0,0.2)',
+                  background: 'linear-gradient(135deg, #dcfce7, #22c55e)'
+                }}
+              >
+                <img 
+                  src={node.photo}
+                  alt={node.name}
+                  className="w-full h-full object-cover"
+                  style={{ imageRendering: 'pixelated' }}
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent && !parent.querySelector('.fallback-emoji')) {
+                      const fallback = document.createElement('div');
+                      fallback.innerHTML = '👤';
+                      fallback.className = 'fallback-emoji text-2xl flex items-center justify-center w-full h-full';
+                      fallback.style.imageRendering = 'pixelated';
+                      parent.appendChild(fallback);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            
+            {/* Clean info box */}
+            <div className="absolute top-18 left-1/2 transform -translate-x-1/2 text-center">
+              <div 
+                className="text-xs text-gray-800 font-bold whitespace-nowrap max-w-20 truncate bg-white border-2 border-gray-400 px-2 py-1"
+                style={{
+                  fontFamily: 'monospace',
+                  imageRendering: 'pixelated',
+                  boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,1)'
+                }}
+              >
+                {node.name.split(' ')[0]}
+              </div>
+            </div>
+          </div>
         );
       })}
       
-      {nodes.map(node => renderNode(node))}
-      
-      {/* Simple pixelated legend */}
+      {/* Simple legend */}
       <div 
         className="absolute bottom-4 right-4 bg-white border-4 border-gray-600 p-3 z-20"
         style={{
@@ -412,29 +469,31 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
           boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,1), 4px 4px 0px rgba(0,0,0,0.2)'
         }}
       >
-        <div className="text-xs font-bold mb-2 text-gray-800">CONNECTIONS</div>
+        <div className="text-xs font-bold mb-2 text-gray-800">CONTACT TYPES</div>
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <div 
-              className="w-4 h-4 border-2 border-gray-400"
+              className="w-4 h-4 border-2 border-gray-600 bg-white flex items-center justify-center"
               style={{ 
-                backgroundColor: 'rgba(156, 163, 175, 0.2)',
                 imageRendering: 'pixelated',
                 boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,0.8)'
               }}
-            />
-            <span className="text-gray-800 font-bold text-xs">FEW MEMORIES</span>
+            >
+              <span className="text-xs">👤</span>
+            </div>
+            <span className="text-gray-800 font-bold text-xs">YOU</span>
           </div>
           <div className="flex items-center gap-2">
             <div 
-              className="w-4 h-4 border-2 border-gray-400"
+              className="w-4 h-4 border-2 border-green-600 bg-green-300 flex items-center justify-center"
               style={{ 
-                backgroundColor: 'rgba(156, 163, 175, 0.5)',
                 imageRendering: 'pixelated',
                 boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,0.8)'
               }}
-            />
-            <span className="text-gray-800 font-bold text-xs">MANY MEMORIES</span>
+            >
+              <span className="text-xs">👥</span>
+            </div>
+            <span className="text-gray-800 font-bold text-xs">FRIENDS</span>
           </div>
         </div>
       </div>
