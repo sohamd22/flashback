@@ -132,7 +132,7 @@ export default function RealVideoGraphCanvas({
       // Use internal search logic
       try {
         if (searchQuery.trim()) {
-          const results = await searchVideos(searchQuery, 20);
+          const results = await searchVideos(searchQuery, 3);
           setInternalVideos(results.clips);
         } else {
           // When search is cleared, reload all videos

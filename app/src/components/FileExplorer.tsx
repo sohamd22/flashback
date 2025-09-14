@@ -165,7 +165,7 @@ export default function FileExplorer({ width, height, onOpenGraphWindow }: FileE
                       const searchTerm = (query != null ? String(query) : searchQuery != null ? String(searchQuery) : '');
                       try {
                         if (searchTerm.trim()) {
-                          const results = await searchVideos(searchTerm, 20);
+                          const results = await searchVideos(searchTerm, 3);
                           setVideos(results.clips);
                         } else {
                           const allVideos = await listAllVideos();
