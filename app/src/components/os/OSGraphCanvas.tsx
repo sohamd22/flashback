@@ -29,34 +29,175 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
   });
   const animationRef = useRef<number>(0);
 
-  // Use positions from data (already optimized by MDS algorithm)
+  // Position nodes in a circle around the center (similar to RealVideoGraphCanvas)
   useEffect(() => {
+    console.log('OSGraphCanvas received data:', data);
+    console.log('Data nodes:', data.nodes);
+    console.log('Data connections:', data.connections);
+    
     if (!data.nodes.length) return;
-    setNodes([...data.nodes]);
-  }, [data]);
+    
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const radius = Math.min(width, height) * 0.3;
+    
+    // Find the current user node
+    const currentUser = data.nodes.find(n => n.isUser);
+    const otherNodes = data.nodes.filter(n => !n.isUser);
+    
+    // First pass: position first-degree connections (your direct friends) around you
+    const firstDegreeNodes = new Map<string, { node: GraphNode; connection: any }>();
+    const secondDegreeNodes: GraphNode[] = [];
+    
+    otherNodes.forEach(node => {
+      const directConnection = data.connections.find(c => 
+        (c.fromId === currentUser?.id && c.toId === node.id) ||
+        (c.fromId === node.id && c.toId === currentUser?.id)
+      );
+      
+      if (directConnection) {
+        firstDegreeNodes.set(node.id, { node, connection: directConnection });
+      } else {
+        secondDegreeNodes.push(node);
+      }
+    });
+    
+    // First, position the user and first-degree connections
+    const positionedNodesMap = new Map();
+    
+    // Position user in center
+    if (currentUser) {
+      positionedNodesMap.set(currentUser.id, { ...currentUser, x: centerX, y: centerY });
+    }
+    
+    // Position first-degree connections (your friends) around you
+    Array.from(firstDegreeNodes.entries()).forEach(([nodeId, { node, connection }]) => {
+      const interactionCount = connection.interactions || 0;
+      const maxInteractions = Math.max(...data.connections.map(c => c.interactions || 0), 1);
+      
+      // Distance based on interaction strength
+      const minDistance = radius * 0.6;
+      const maxDistance = radius * 1.0;
+      const normalizedInteractions = interactionCount / maxInteractions;
+      const distance = maxDistance - (normalizedInteractions * (maxDistance - minDistance));
+      
+      // Random angle for natural scatter
+      const nodeIndex = Array.from(firstDegreeNodes.keys()).indexOf(nodeId);
+      const seedAngle = (nodeIndex * 137.5) % 360;
+      const randomAngleOffset = (Math.sin(nodeIndex * 2.3) * 30);
+      const angle = (seedAngle + randomAngleOffset) * (Math.PI / 180);
+      
+      positionedNodesMap.set(nodeId, {
+        ...node,
+        x: centerX + Math.cos(angle) * distance,
+        y: centerY + Math.sin(angle) * distance
+      });
+    });
+    
+    // Now position second-degree connections relative to first-degree connections
+    secondDegreeNodes.forEach(node => {
+      // Find connections to positioned nodes
+      const nodeConnections = data.connections.filter(c => 
+        c.fromId === node.id || c.toId === node.id
+      );
+      
+      // Find which of your friends this person is connected to
+      const friendConnections = nodeConnections.filter(c => {
+        const connectedToId = c.fromId === node.id ? c.toId : c.fromId;
+        return firstDegreeNodes.has(connectedToId);
+      });
+      
+      if (friendConnections.length === 0) {
+        // No connections to your friends - place far away randomly
+        const nodeIndex = secondDegreeNodes.findIndex(n => n.id === node.id);
+        const angle = (nodeIndex * 137.5) * (Math.PI / 180);
+        const distance = radius * 1.6; // Very far
+        
+        positionedNodesMap.set(node.id, {
+          ...node,
+          x: centerX + Math.cos(angle) * distance,
+          y: centerY + Math.sin(angle) * distance
+        });
+        return;
+      }
+      
+      // Position near their strongest connection among your friends
+      const strongestConnection = friendConnections.reduce((max, current) => 
+        (current.interactions || 0) > (max.interactions || 0) ? current : max
+      );
+      
+      const connectedFriendId = strongestConnection.fromId === node.id ? 
+        strongestConnection.toId : strongestConnection.fromId;
+      
+      // Find the positioned friend node
+      const friendNode = positionedNodesMap.get(connectedFriendId);
+      
+      if (!friendNode) {
+        // Fallback positioning
+        const nodeIndex = secondDegreeNodes.findIndex(n => n.id === node.id);
+        const angle = (nodeIndex * 137.5) * (Math.PI / 180);
+        const distance = radius * 1.4;
+        
+        positionedNodesMap.set(node.id, {
+          ...node,
+          x: centerX + Math.cos(angle) * distance,
+          y: centerY + Math.sin(angle) * distance
+        });
+        return;
+      }
+      
+      // Position this node in a cluster around the friend
+      const nodeIndex = secondDegreeNodes.findIndex(n => n.id === node.id);
+      const clusterAngle = (nodeIndex * 60 + Math.sin(nodeIndex) * 45) * (Math.PI / 180);
+      const clusterDistance = 80 + (Math.cos(nodeIndex * 1.3) * 20); // 60-100px from friend
+      
+      // Calculate position relative to friend, but away from center
+      const friendToCenterAngle = Math.atan2(friendNode.y - centerY, friendNode.x - centerX);
+      const finalAngle = friendToCenterAngle + clusterAngle;
+      
+      positionedNodesMap.set(node.id, {
+        ...node,
+        x: friendNode.x + Math.cos(finalAngle) * clusterDistance,
+        y: friendNode.y + Math.sin(finalAngle) * clusterDistance
+      });
+    });
+    
+    // Convert map back to array in original order
+    const positionedNodes = data.nodes.map(node => positionedNodesMap.get(node.id) || node);
+    
+    console.log('Positioned nodes:', positionedNodes);
+    setNodes(positionedNodes);
+  }, [data, width, height]);
 
-  // Apply grayscale based on interactions with current user
+  // Apply styling based on interactions with current user
   const getNodeStyle = (node: GraphNode) => {
-    if (node.isUser) return {};
+    if (node.isUser) return { cursor: 'pointer' };
     
     const currentUserId = data.nodes.find(n => n.isUser)?.id;
-    if (!currentUserId) return {};
+    if (!currentUserId) return { cursor: 'not-allowed', filter: 'grayscale(0.8)' };
     
     const connection = data.connections.find(c => 
       (c.fromId === currentUserId && c.toId === node.id) ||
       (c.fromId === node.id && c.toId === currentUserId)
     );
     
-    if (!connection) return { filter: 'grayscale(0.8)' };
+    if (!connection) {
+      return { 
+        cursor: 'not-allowed', 
+        filter: 'grayscale(0.9) opacity(0.6)',
+        pointerEvents: 'auto' // Still allow clicking to show error message
+      };
+    }
     
     // Find max interactions for normalization
-    const maxInteractions = Math.max(...data.connections.map(c => c.interactions || 0));
+    const maxInteractions = Math.max(...data.connections.map(c => c.interactions || 0), 1);
     const normalizedInteractions = (connection.interactions || 0) / maxInteractions;
     
-    // Grayscale inversely proportional to interactions (0-0.8)
-    const grayscale = 0.8 - (normalizedInteractions * 0.6);
+    // Grayscale inversely proportional to interactions (0-0.6)
+    const grayscale = 0.6 - (normalizedInteractions * 0.4);
     
     return {
+      cursor: 'pointer',
       filter: `grayscale(${grayscale})`,
     };
   };
@@ -84,11 +225,9 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
 
     const currentNode = nodes.find(n => n.id === dragState.nodeId);
     if (currentNode) {
-      // Animate back to original MDS position
-      const originalNode = data.nodes.find(n => n.id === dragState.nodeId);
-      if (originalNode) {
-        animateNodeBack(dragState.nodeId, { x: currentNode.x, y: currentNode.y }, { x: originalNode.x, y: originalNode.y });
-      }
+      // Animate back to the stored original position from when dragging started
+      // This ensures we return to the correct algorithm-calculated position
+      animateNodeBack(dragState.nodeId, { x: currentNode.x, y: currentNode.y }, dragState.originalPosition);
     }
 
     setDragState({
@@ -272,12 +411,12 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
         return (
           <div
             key={node.id}
-            className={`absolute transform -translate-x-1/2 -translate-y-1/2 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+            className={`absolute ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
             style={{ 
-              left: node.x, 
-              top: node.y,
+              left: node.x - (isUser ? 40 : 32), // Half of node width (user: 80px, others: 64px)
+              top: node.y - (isUser ? 40 : 32),  // Half of node height
               zIndex: isUser ? 15 : (isDragging ? 20 : 5),
-              transform: isDragging ? 'translate(-50%, -50%) scale(1.1)' : 'translate(-50%, -50%) scale(1)',
+              transform: isDragging ? 'scale(1.1)' : 'scale(1)',
               ...nodeStyle
             }}
             onClick={(e) => {
@@ -386,7 +525,17 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
           const fromNode = nodes.find(n => n.id === connection.fromId);
           const toNode = nodes.find(n => n.id === connection.toId);
           
-          if (!fromNode || !toNode) return null;
+          if (!fromNode || !toNode) {
+            console.log('Missing node for connection:', connection, { fromNode, toNode });
+            return null;
+          }
+          
+          // Now that nodes are positioned with left: x - nodeSize/2, top: y - nodeSize/2,
+          // the node.x and node.y coordinates represent the visual center of each node.
+          const fromCenterX = fromNode.x;
+          const fromCenterY = fromNode.y;
+          const toCenterX = toNode.x;
+          const toCenterY = toNode.y;
           
           const isUserConnection = fromNode.isUser || toNode.isUser;
           const strokeWidth = isUserConnection ? 3 : 1.5;
@@ -397,10 +546,10 @@ export default function OSGraphCanvas({ data, width, height, onUserClick, onFrie
           return (
             <line
               key={`connection-${connection.fromId}-${connection.toId}-${index}`}
-              x1={fromNode.x}
-              y1={fromNode.y}
-              x2={toNode.x}
-              y2={toNode.y}
+              x1={fromCenterX}
+              y1={fromCenterY}
+              x2={toCenterX}
+              y2={toCenterY}
               stroke={strokeColor}
               strokeWidth={strokeWidth}
               strokeDasharray={dashArray}

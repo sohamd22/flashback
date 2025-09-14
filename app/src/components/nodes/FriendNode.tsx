@@ -5,10 +5,12 @@ interface FriendNodeProps {
   y: number;
   photo: string;
   name: string;
+  userId?: string;
   size?: number;
   isHovered?: boolean;
   isDragging?: boolean;
   onClick?: () => void;
+  onProfileClick?: (userId: string, userName: string, userPhoto: string) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   onMouseDown?: (e: React.MouseEvent) => void;
@@ -19,10 +21,12 @@ export default function FriendNode({
   y,
   photo,
   name,
+  userId,
   size = 120,
   isHovered = false,
   isDragging = false,
   onClick,
+  onProfileClick,
   onMouseEnter,
   onMouseLeave,
   onMouseDown
@@ -43,7 +47,13 @@ export default function FriendNode({
         cursor: isDragging ? 'grabbing' : 'grab'
       }}
       className={`select-none ${isDragging ? 'cursor-grabbing' : ''}`}
-      onClick={onClick}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (onClick) onClick();
+        if (onProfileClick && userId) {
+          onProfileClick(userId, name, photo);
+        }
+      }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onMouseDown={onMouseDown}

@@ -16,16 +16,16 @@ export interface GraphConnection {
 }
 
 export interface APIUser {
-  id: number;
+  id: string;
   name: string;
   email: string;
   profile_photo: string;
   reference_image: string | null;
-  video_ids: number[];
+  video_ids: string[];
 }
 
 export interface APIInteraction {
-  id: number;
+  id: string;
   interaction_count: number;
   created_at: string;
   updated_at: string;
@@ -84,22 +84,37 @@ export const performMDS = (distanceMatrix: number[][], width: number, height: nu
 // Convert API interactions to graph data with MDS positioning
 export const convertAPIDataToGraphData = (
   interactions: APIInteraction[], 
-  currentUserId: number, 
+  currentUserId: string, 
   width: number, 
   height: number
 ): GraphData => {
-  // Extract all unique users
-  const userMap = new Map<number, APIUser>();
+  console.log('convertAPIDataToGraphData input:', { interactions, currentUserId });
+  
+  if (!interactions || interactions.length === 0) {
+    console.log('No interactions provided');
+    return { nodes: [], connections: [] };
+  }
+  
+  // Extract all unique users - be more defensive
+  const userMap = new Map<string, APIUser>();
   interactions.forEach(interaction => {
-    userMap.set(interaction.user1.id, interaction.user1);
-    userMap.set(interaction.user2.id, interaction.user2);
+    if (interaction?.user1?.id) {
+      userMap.set(interaction.user1.id, interaction.user1);
+    }
+    if (interaction?.user2?.id) {
+      userMap.set(interaction.user2.id, interaction.user2);
+    }
   });
   
   const users = Array.from(userMap.values());
   const userIds = users.map(u => u.id);
   const n = users.length;
   
+  console.log('Extracted users:', users);
+  console.log('User count:', n);
+  
   if (n === 0) {
+    console.log('No valid users found in interactions');
     return { nodes: [], connections: [] };
   }
   
@@ -136,9 +151,9 @@ export const convertAPIDataToGraphData = (
   
   // Create nodes
   const nodes: GraphNode[] = users.map((user, index) => ({
-    id: user.id.toString(),
+    id: user.id,
     name: user.name,
-    photo: `data:image/jpeg;base64,${user.profile_photo}`,
+    photo: user.profile_photo.startsWith('data:') ? user.profile_photo : `data:image/jpeg;base64,${user.profile_photo}`,
     email: user.email,
     x: positions[index]?.x || width / 2,
     y: positions[index]?.y || height / 2,
@@ -149,16 +164,20 @@ export const convertAPIDataToGraphData = (
   const connections: GraphConnection[] = [];
   const maxInteractions = Math.max(...interactions.map(i => i.interaction_count), 1);
   
+  console.log('Creating connections from interactions:', interactions);
   interactions.forEach(interaction => {
     const strength = interaction.interaction_count / maxInteractions;
-    connections.push({
-      fromId: interaction.user1.id.toString(),
-      toId: interaction.user2.id.toString(),
+    const connection = {
+      fromId: interaction.user1.id,
+      toId: interaction.user2.id,
       interactions: interaction.interaction_count,
       strength
-    });
+    };
+    console.log('Adding connection:', connection);
+    connections.push(connection);
   });
   
+  console.log('Final graph data:', { nodes, connections });
   return { nodes, connections };
 };
 

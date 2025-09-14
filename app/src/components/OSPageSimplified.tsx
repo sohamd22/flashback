@@ -11,6 +11,7 @@ import Window from './os/Window';
 import Taskbar from './os/Taskbar';
 import OSGraphCanvas from './os/OSGraphCanvas';
 import RetroVideoPlayer from './RetroVideoPlayer';
+import UserProfileWindow from './UserProfileWindow';
 
 // Types
 interface WindowState {
@@ -38,19 +39,14 @@ interface DesktopIconData {
 
 // Notifications management hook
 function useNotifications(profile: any) {
-  const [notifications, setNotifications] = useState(() => {
-    // Try to load read status from localStorage
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('photographic_notifications') : null;
-    const savedData = saved ? JSON.parse(saved) : {};
-    
-    return [
-      {
-        id: 1,
-        subject: "Welcome to Photographic!",
-        from: "Team Photographic",
-        preview: "Learn how to use your new photo memory platform...",
-        isRead: savedData['1'] || false,
-        content: `Welcome to Photographic!
+  const [notifications, setNotifications] = useState([
+    {
+      id: 1,
+      subject: "Welcome to Photographic!",
+      from: "Team Photographic",
+      preview: "Learn how to use your new photo memory platform...",
+      isRead: false, // Start with unread to avoid hydration mismatch
+      content: `Welcome to Photographic!
 
 Hi ${profile?.name || 'there'}! We're excited to have you on board. 
 Here's how to get started with Photographic:
@@ -68,9 +64,25 @@ Here's how to get started with Photographic:
 Questions? Just reply to this email - we're here to help!
 
 - Team Photographic`
-      }
-    ];
-  });
+    }
+  ]);
+  
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Load saved state after hydration
+  useEffect(() => {
+    const saved = localStorage.getItem('photographic_notifications');
+    const savedData = saved ? JSON.parse(saved) : {};
+    
+    setNotifications(prev => 
+      prev.map(notification => ({
+        ...notification,
+        isRead: savedData[notification.id.toString()] || false
+      }))
+    );
+    
+    setIsHydrated(true);
+  }, []);
 
   const markAsRead = (notificationId: number) => {
     setNotifications(prev => {
@@ -92,7 +104,7 @@ Questions? Just reply to this email - we're here to help!
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
-  return { notifications, markAsRead, unreadCount };
+  return { notifications, markAsRead, unreadCount, isHydrated };
 }
 
 // Window management hook
@@ -211,7 +223,7 @@ function VideosApp({ width, height, windowManager }: { width: number; height: nu
   );
 }
 
-function ContactsApp({ width, height }: { width: number; height: number }) {
+function ContactsApp({ width, height, windowManager }: { width: number; height: number; windowManager: any }) {
   const { profile } = useAuth();
   const [interactions, setInteractions] = useState<APIInteraction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -228,14 +240,28 @@ function ContactsApp({ width, height }: { width: number; height: number }) {
         }
         
         const data = await response.json();
-        console.log(data);
-        // Ensure data is an array
-        const interactions = Array.isArray(data) ? data : [];
-        setInteractions(interactions);
+        console.log('Raw API data:', data);
+        
+        // Extract interactions from the response
+        let interactionsData = [];
+        if (Array.isArray(data)) {
+          interactionsData = data;
+        } else if (data && Array.isArray(data.interactions)) {
+          interactionsData = data.interactions;
+        } else if (data && typeof data === 'object') {
+          // If data is an object with interactions as values
+          interactionsData = Object.values(data).filter((item: any) => 
+            item && typeof item === 'object' && item.user1 && item.user2
+          );
+        }
+        
+        console.log('Processed interactions:', interactionsData);
+        setInteractions(interactionsData);
         setError(null);
       } catch (err) {
         console.error('Failed to fetch interactions:', err);
         setError('Failed to load social network data');
+        setInteractions([]); // Set empty array on error
       } finally {
         setLoading(false);
       }
@@ -283,27 +309,126 @@ function ContactsApp({ width, height }: { width: number; height: number }) {
     );
   }
 
-  // Use the first user in interactions as current user, or create one from profile
-  const currentUserId = interactions.length > 0 ? interactions[0].user1.id : (profile?.id || 1);
-  const safeInteractions = Array.isArray(interactions) ? interactions : [];
+  // Find current user in interactions based on profile
+  let currentUserId: string = profile?.id?.toString() || '1';
+  if (profile?.email && interactions.length > 0) {
+    const foundUser = interactions.find(interaction => 
+      interaction.user1?.email === profile.email || interaction.user2?.email === profile.email
+    );
+    if (foundUser) {
+      currentUserId = foundUser.user1.email === profile.email ? foundUser.user1.id : foundUser.user2.id;
+    }
+  }
   
-  // If no interactions but we have a profile, create a minimal graph with just the user
+  console.log('ContactsApp debug:', {
+    interactions,
+    interactionsLength: interactions.length,
+    profile,
+    currentUserId
+  });
+  
+  // Create graph data - FORCE IT TO WORK
   let graphData;
-  if (safeInteractions.length === 0 && profile) {
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = Math.min(width, height) * 0.3;
+  
+  console.log('Creating graph with interactions count:', interactions.length);
+  
+  if (interactions.length === 0) {
+    // Create demo graph with mock friends
+    console.log('No interactions, creating demo graph');
+    const mockFriends = [
+      { id: 'demo1', name: 'Friend 1', photo: '/icons/user.png' },
+      { id: 'demo2', name: 'Friend 2', photo: '/icons/user.png' },
+    ];
+    
     graphData = {
-      nodes: [{
-        id: profile.id?.toString() || '1',
-        name: profile.name || 'User',
-        photo: profile.profile_photo || '/icons/user.png',
-        x: width / 2,
-        y: height / 2,
-        isUser: true
-      }],
-      connections: []
+      nodes: [
+        {
+          id: currentUserId,
+          name: profile?.name || 'You',
+          photo: profile?.profile_photo || '/icons/user.png',
+          x: centerX,
+          y: centerY,
+          isUser: true
+        },
+        ...mockFriends.map((friend, index) => {
+          const angle = (index / mockFriends.length) * 2 * Math.PI;
+          return {
+            id: friend.id,
+            name: friend.name,
+            photo: friend.photo,
+            x: centerX + Math.cos(angle) * radius,
+            y: centerY + Math.sin(angle) * radius,
+            isUser: false
+          };
+        })
+      ],
+      connections: mockFriends.map(friend => ({
+        fromId: currentUserId,
+        toId: friend.id,
+        interactions: 5,
+        strength: 0.5
+      }))
     };
   } else {
-    graphData = convertAPIDataToGraphData(safeInteractions, currentUserId, width, height);
+    // Extract users manually from interactions
+    console.log('Creating real graph from interactions');
+    const userMap = new Map();
+    
+    interactions.forEach(interaction => {
+      if (interaction?.user1?.id) {
+        userMap.set(interaction.user1.id, interaction.user1);
+      }
+      if (interaction?.user2?.id) {
+        userMap.set(interaction.user2.id, interaction.user2);
+      }
+    });
+    
+    const allUsers = Array.from(userMap.values());
+    const currentUser = allUsers.find(u => u.id === currentUserId);
+    const otherUsers = allUsers.filter(u => u.id !== currentUserId);
+    
+    console.log('Found users:', { currentUser, otherUsers });
+    
+    const nodes = [
+      // Current user in center
+      {
+        id: currentUserId,
+        name: currentUser?.name || profile?.name || 'You',
+        photo: currentUser?.profile_photo || profile?.profile_photo || '/icons/user.png',
+        x: centerX,
+        y: centerY,
+        isUser: true
+      },
+      // Other users in circle
+      ...otherUsers.map((user, index) => {
+        const angle = (index / Math.max(otherUsers.length, 1)) * 2 * Math.PI;
+        return {
+          id: user.id,
+          name: user.name,
+          photo: user.profile_photo || '/icons/user.png',
+          x: centerX + Math.cos(angle) * radius,
+          y: centerY + Math.sin(angle) * radius,
+          isUser: false
+        };
+      })
+    ];
+    
+    // Create connections between all users based on interactions (not just user-centric)
+    const connections = interactions.map(interaction => ({
+      fromId: interaction.user1.id,
+      toId: interaction.user2.id,
+      interactions: interaction.interaction_count || 1,
+      strength: Math.min((interaction.interaction_count || 1) / 10, 1)
+    }));
+    
+    console.log('Created connections:', connections);
+    graphData = { nodes, connections };
   }
+
+  console.log("Final Graph Data:", graphData);
   
   return (
     <div className="h-full bg-black">
@@ -313,7 +438,57 @@ function ContactsApp({ width, height }: { width: number; height: number }) {
         height={height}
         onUserClick={() => {}}
         onFriendClick={(friendId) => {
-          console.log(`Viewing friend: ${friendId} in desktop mode`);
+          // Check if current user has any interaction with this friend
+          const interaction = interactions.find(interaction => 
+            (interaction.user1.id === currentUserId && interaction.user2.id === friendId) ||
+            (interaction.user2.id === currentUserId && interaction.user1.id === friendId)
+          );
+          
+          if (!interaction) {
+            // Show error message for no interactions
+            const windowWidth = typeof window !== 'undefined' ? Math.min(600, window.innerWidth - 100) : 600;
+            const windowHeight = typeof window !== 'undefined' ? Math.min(400, window.innerHeight - 120) : 400;
+            
+            windowManager.openWindow(
+              '❌ Profile Access Denied',
+              <div className="h-full flex items-center justify-center bg-black text-white p-8">
+                <div className="text-center" style={{ fontFamily: 'monospace' }}>
+                  <div className="text-red-400 mb-4 text-4xl">🚫</div>
+                  <div className="text-xl mb-4">Access Denied</div>
+                  <div className="text-sm text-gray-300 mb-4">
+                    You cannot view this person's profile because you have no recorded interactions with them.
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Try uploading photos or videos that include both of you to create a connection!
+                  </div>
+                </div>
+              </div>,
+              "/icons/user.png",
+              windowWidth,
+              windowHeight
+            );
+            return;
+          }
+          
+          // Find the friend's data from interactions
+          const friendUser = interaction.user1.id === friendId ? interaction.user1 : interaction.user2;
+          
+          const windowWidth = typeof window !== 'undefined' ? Math.min(800, window.innerWidth - 100) : 800;
+          const windowHeight = typeof window !== 'undefined' ? Math.min(600, window.innerHeight - 120) : 600;
+          
+          windowManager.openWindow(
+            `👤 ${friendUser.name} - Profile (${interaction.interaction_count} interactions)`,
+            <UserProfileWindow
+              userId={friendUser.id.toString()}
+              userName={friendUser.name}
+              userPhoto={friendUser.profile_photo}
+              width={windowWidth - 20}
+              height={windowHeight - 60}
+            />,
+            "/icons/user.png",
+            windowWidth,
+            windowHeight
+          );
         }}
       />
     </div>
@@ -629,7 +804,7 @@ export default function OSPage() {
   const [showEmailNotification, setShowEmailNotification] = useState(false);
   
   const windowManager = useWindowManager();
-  const { notifications, markAsRead, unreadCount } = useNotifications(profile);
+  const { notifications, markAsRead, unreadCount, isHydrated } = useNotifications(profile);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -638,10 +813,10 @@ export default function OSPage() {
 
   // Show email notification when user logs in and has unread emails
   useEffect(() => {
-    if (profile && unreadCount > 0) {
+    if (profile && unreadCount > 0 && isHydrated) {
       setShowEmailNotification(true);
     }
-  }, [profile, unreadCount]);
+  }, [profile, unreadCount, isHydrated]);
 
   const desktopIcons: DesktopIconData[] = [
     {
@@ -667,7 +842,7 @@ export default function OSPage() {
         const windowHeight = typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800;
         windowManager.openWindow(
           'Social Graph - Photo Connections',
-          <ContactsApp width={windowWidth - 20} height={windowHeight - 60} />,
+          <ContactsApp width={windowWidth - 20} height={windowHeight - 60} windowManager={windowManager} />,
           "/icons/contacts.png"
         );
       }
@@ -676,7 +851,7 @@ export default function OSPage() {
       id: 'email',
       name: 'Mail',
       icon: "/icons/email.png",
-      ...(unreadCount > 0 && { badgeCount: unreadCount }),
+      ...(isHydrated && unreadCount > 0 && { badgeCount: unreadCount }),
       onDoubleClick: () => {
         const windowWidth = typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200;
         const windowHeight = typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800;
@@ -750,7 +925,7 @@ export default function OSPage() {
       </div>
 
       {/* Email notification popup */}
-      {showEmailNotification && unreadCount > 0 && (
+      {showEmailNotification && unreadCount > 0 && isHydrated && (
         <EmailNotificationPopup
           unreadCount={unreadCount}
           onClose={() => setShowEmailNotification(false)}
