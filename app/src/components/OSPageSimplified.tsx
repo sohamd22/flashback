@@ -43,9 +43,9 @@ function useWindowManager() {
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [nextZIndex, setNextZIndex] = useState(1000); // Start with high z-index
 
-  const openWindow = (title: string, content: React.ReactNode, icon: string) => {
-    const windowWidth = typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200;
-    const windowHeight = typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800;
+  const openWindow = (title: string, content: React.ReactNode, icon: string, customWidth?: number, customHeight?: number) => {
+    const windowWidth = customWidth || (typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200);
+    const windowHeight = customHeight || (typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800);
     
     const newWindow: WindowState = {
       id: `window-${Date.now()}`,
@@ -360,7 +360,7 @@ export default function OSPage() {
   const desktopIcons: DesktopIconData[] = [
     {
       id: 'personal',
-      name: profile?.name ? `Videos` : 'My Memories',
+      name: 'Personal',
       icon: "/icons/folder.png",
       x: 32,
       y: 32,
@@ -376,7 +376,7 @@ export default function OSPage() {
     },
     {
       id: 'contacts',
-      name: 'Friends',
+      name: 'Contacts',
       icon: "/icons/contacts.png",
       x: 32,
       y: 140,

@@ -115,7 +115,7 @@ export default function RetroVideoPlayer({
     >
       {/* Title bar */}
       <div className="bg-blue-800 text-white px-2 py-1 text-xs flex items-center justify-between">
-        <span>🎬 Video Player - {video.query || 'Clip'}</span>
+        <span>🎬 {video.query || 'Clip'}</span>
         <div className="flex items-center gap-1">
           {onToggleFavorite && (
             <button

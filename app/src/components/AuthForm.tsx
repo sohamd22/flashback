@@ -72,104 +72,114 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
       showTaskbar={true}
     >
       <div className="flex items-center justify-center h-full">
-        <div className="bg-gray-100 border-2 border-gray-600 shadow-2xl w-96">
+        <div className="bg-gray-300 border-2 border-gray-600 w-80" style={{
+          boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.5), inset 2px 2px 0px rgba(255,255,255,0.8), 4px 4px 10px rgba(0,0,0,0.3)'
+        }}>
           {/* Window Title Bar */}
-          <div className="h-8 bg-gradient-to-r from-gray-300 to-gray-400 border-b-2 border-gray-600 flex items-center justify-between px-2">
-            <span className="text-sm font-bold text-gray-800">
-              {isSignup ? 'Create Account' : 'User Login'}
+          <div className="h-6 bg-gradient-to-r from-blue-600 to-blue-800 border-b border-gray-500 flex items-center justify-between px-2">
+            <span className="text-xs text-white font-bold">
+              Log On to PhotoOS
             </span>
             <div className="flex gap-1">
-              <div className="w-6 h-6 bg-red-400 border border-red-600 flex items-center justify-center text-xs font-bold cursor-not-allowed opacity-75">×</div>
+              <div className="w-4 h-4 bg-gray-300 border border-gray-600 flex items-center justify-center text-xs font-bold cursor-not-allowed" style={{
+                boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,0.8)'
+              }}>×</div>
             </div>
           </div>
 
           {/* Window Content */}
-          <div className="p-8 bg-white">
-            <div className="text-center mb-8">
-              {!isSignup && (
-                <img
-                  src="/icons/photo_logo.png"
-                  alt="Photographic Logo"
-                  className="w-20 h-20 mx-auto mb-4"
-                />
-              )}
-              <h1 className="text-3xl font-bold text-gray-800 mb-2">
-                Photographic
-              </h1>
-              <p className="text-gray-600 text-sm">
-                {isSignup ? 'Welcome to PhotoOS' : 'Welcome back to PhotoOS'}
-              </p>
+          <div className="p-6 bg-gray-300">
+            {/* User Icon */}
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 mx-auto mb-3 bg-gray-400 border-2 border-gray-600 rounded-full flex items-center justify-center" style={{
+                boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
+              }}>
+                <div className="text-2xl"><img src="/icons/photo_logo.png" alt="User" className="w-full h-full object-cover" /></div>
+              </div>
+              <div className="text-sm text-gray-800 font-bold">
+                {isSignup ? 'Create New User Account' : 'Type your user name and password'}
+              </div>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Username/Email Field */}
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  Email Address:
+                <label className="block text-xs text-gray-800 mb-1 font-bold">
+                  User name:
                 </label>
                 <input
                   type="email"
-                  placeholder="user@photographic.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3 py-2 border-2 border-gray-400 focus:border-blue-500 focus:outline-none bg-white text-black"
+                  className="w-full px-2 py-1 text-sm bg-white border-2 border-gray-600 focus:outline-none text-black"
+                  style={{
+                    boxShadow: 'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)'
+                  }}
                   disabled={isLoading}
                 />
               </div>
 
+              {/* Password Field */}
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">
+                <label className="block text-xs text-gray-800 mb-1 font-bold">
                   Password:
                 </label>
                 <input
                   type="password"
-                  placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 border-2 border-gray-400 focus:border-blue-500 focus:outline-none bg-white text-black"
+                  className="w-full px-2 py-1 text-sm bg-white border-2 border-gray-600 focus:outline-none text-black"
+                  style={{
+                    boxShadow: 'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)'
+                  }}
                   disabled={isLoading}
                 />
               </div>
 
+              {/* Confirm Password for Signup */}
               {isSignup && (
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Confirm Password:
+                  <label className="block text-xs text-gray-800 mb-1 font-bold">
+                    Confirm password:
                   </label>
                   <input
                     type="password"
-                    placeholder="••••••••"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full px-3 py-2 border-2 border-gray-400 focus:border-blue-500 focus:outline-none bg-white text-black"
+                    className="w-full px-2 py-1 text-sm bg-white border-2 border-gray-600 focus:outline-none text-black"
+                    style={{
+                      boxShadow: 'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)'
+                    }}
                     disabled={isLoading}
                   />
                 </div>
               )}
 
+              {/* Error Message */}
               {error && (
-                <div className="bg-red-100 border-2 border-red-400 text-red-700 px-3 py-2 text-sm">
-                  {error}
+                <div className="bg-gray-200 border border-gray-600 text-red-800 px-2 py-2 text-xs" style={{
+                  boxShadow: 'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)'
+                }}>
+                  ⚠ {error}
                 </div>
               )}
 
-              <div className="pt-4">
+              {/* Buttons */}
+              <div className="pt-4 flex justify-center gap-3">
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full px-4 py-2 bg-gray-300 border-2 border-gray-600 text-black font-bold hover:bg-gray-400 focus:outline-none transition-all duration-150 disabled:opacity-50 cursor-pointer relative z-10"
+                  className="px-6 py-2 bg-gray-300 border-2 border-gray-600 text-black text-xs font-bold hover:bg-gray-200 focus:outline-none disabled:opacity-50 cursor-pointer"
                   style={{
-                    boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)',
-                    pointerEvents: isLoading ? 'none' : 'auto'
+                    boxShadow: isLoading ? 
+                      'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)' :
+                      'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
                   }}
                 >
-                  {isLoading ? (
-                    <span className="flex items-center justify-center">
-                      <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin mr-2"></div>
-                      {isSignup ? 'Creating...' : 'Logging in...'}
-                    </span>
-                  ) : (
-                    isSignup ? 'Create Account' : 'Log In'
-                  )}
+                  {isLoading ? 
+                    (isSignup ? 'Creating...' : 'Logging On...') : 
+                    (isSignup ? 'OK' : 'OK')
+                  }
                 </button>
 
                 <button
@@ -180,18 +190,22 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
                     setPassword('');
                     setConfirmPassword('');
                   }}
-                  className="w-full mt-3 py-1.5 text-gray-600 text-sm underline hover:text-gray-800 focus:outline-none transition-all duration-150 cursor-pointer relative z-10"
+                  className="px-4 py-2 bg-gray-300 border-2 border-gray-600 text-black text-xs font-bold hover:bg-gray-200 focus:outline-none cursor-pointer"
+                  style={{
+                    boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
+                  }}
                   disabled={isLoading}
                 >
-                  {isSignup ? 'Already have an account? Sign in' : 'No account? Sign up'}
+                  {isSignup ? 'Sign In' : 'Sign Up'}
                 </button>
               </div>
             </form>
 
-            <div className="mt-6 text-center">
-              <p className="text-xs text-gray-500">
-                PhotoOS v1.0 - Photographic Memory Management System
-              </p>
+            {/* Bottom Status */}
+            <div className="mt-4 text-center">
+              <div className="text-xs text-gray-600">
+                PhotoOS • Photographic Memory Management System
+              </div>
             </div>
           </div>
         </div>
