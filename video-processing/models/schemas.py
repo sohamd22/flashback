@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 
@@ -42,3 +42,5 @@ class VideoChunkMetadata(BaseModel):
     duration: float
     gcs_path: str
     timestamp: datetime
+    transcription: Optional[str] = None
+    transcription_words: Optional[List[Dict[str, Any]]] = None

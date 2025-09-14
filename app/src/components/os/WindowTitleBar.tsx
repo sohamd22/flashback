@@ -24,9 +24,9 @@ export default function WindowTitleBar({
       </span>
       <div className="window-controls flex gap-1">
         <button
-          className="w-6 h-6 bg-gray-300 border-2 border-gray-600 hover:bg-gray-400 flex items-center justify-center text-xs font-bold"
+          className="w-6 h-6 bg-red-400 border-2 border-gray-600 hover:bg-red-500 transition-all duration-200 flex items-center justify-center text-xs font-bold"
           style={{
-            boxShadow: 'inset -1px -1px 0px rgba(0,0,0,0.3), inset 1px 1px 0px rgba(255,255,255,0.8)',
+            boxShadow: 'inset -1px -1px 0px rgba(255,0,0,0.3), inset 1px 1px 0px rgba(255,0,0,0.8)',
             fontFamily: 'monospace'
           }}
           onClick={onClose}
