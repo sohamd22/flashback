@@ -16,7 +16,7 @@ from datetime import datetime
 from collections import defaultdict
 from dataclasses import dataclass
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from supabase import create_client, Client
@@ -1336,39 +1336,13 @@ def fastapi_app():
             raise HTTPException(status_code=500, detail=str(e))
 
     @web_app.get("/interactions")
-    async def get_all_interactions():
-        """Get all interactions with full profile details for both users"""
+    async def get_all_interactions(user_id: Optional[str] = Query(None, description="Filter interactions for a specific user")):
+        """Get interactions with full profile details for both users. Optionally filter by user_id."""
         try:
-            logger.info("Fetching all interactions with profile details")
-
-            # Build the query to join interactions with profiles_images twice
-            # Using URL encoding for the complex query
-            import urllib.parse
-
-            # SQL query that joins interactions with profiles_images for both users
-            query = """
-            SELECT
-                i.id,
-                i.interaction_count,
-                i.created_at,
-                i.updated_at,
-                p1.id as user1_id,
-                p1.name as user1_name,
-                p1.email as user1_email,
-                p1.profile_photo as user1_profile_photo,
-                p1.reference_image as user1_reference_image,
-                p1.video_ids as user1_video_ids,
-                p2.id as user2_id,
-                p2.name as user2_name,
-                p2.email as user2_email,
-                p2.profile_photo as user2_profile_photo,
-                p2.reference_image as user2_reference_image,
-                p2.video_ids as user2_video_ids
-            FROM interactions i
-            LEFT JOIN profiles_images p1 ON i.user_id_1 = p1.id
-            LEFT JOIN profiles_images p2 ON i.user_id_2 = p2.id
-            ORDER BY i.updated_at DESC
-            """
+            if user_id:
+                logger.info(f"Fetching interactions for user {user_id} with profile details")
+            else:
+                logger.info("Fetching all interactions with profile details")
 
             # Use direct HTTP call with PostgREST
             import requests
@@ -1379,45 +1353,53 @@ def fastapi_app():
                 "Content-Type": "application/json"
             }
 
-            # Execute the query using rpc function
-            rpc_url = f"{base_url}/rpc/get_all_interactions_with_profiles"
+            # Build the interactions query with optional user filtering
+            interactions_query = f"{base_url}/interactions?select=*&order=updated_at.desc"
+            
+            if user_id:
+                # Filter interactions where user_id is in either user_id_1 or user_id_2
+                # Using PostgREST's "or" filter syntax
+                interactions_query += f"&or=(user_id_1.eq.{user_id},user_id_2.eq.{user_id})"
 
-            # First, let's try to create this function in the database or use a direct query approach
-            # Since we need to execute a complex join, we'll use the raw SQL approach
-
-            # For now, let's use a simpler approach by calling existing functions and joining in Python
-            # Get all interactions first
-            interactions_response = requests.get(
-                f"{base_url}/interactions?select=*&order=updated_at.desc",
-                headers=headers
-            )
+            # Get interactions (filtered or all)
+            interactions_response = requests.get(interactions_query, headers=headers)
             interactions_response.raise_for_status()
             interactions_data = interactions_response.json()
 
-            logger.info(f"Retrieved {len(interactions_data)} interactions")
+            if user_id:
+                logger.info(f"Retrieved {len(interactions_data)} interactions for user {user_id}")
+            else:
+                logger.info(f"Retrieved {len(interactions_data)} total interactions")
 
             if not interactions_data:
                 return {
                     "total_interactions": 0,
-                    "interactions": []
+                    "interactions": [],
+                    "filtered_by_user": user_id
                 }
 
-            # Get all unique user IDs from interactions
+            # Get all unique user IDs from the filtered interactions
             user_ids = set()
             for interaction in interactions_data:
                 user_ids.add(interaction['user_id_1'])
                 user_ids.add(interaction['user_id_2'])
 
-            # Get all profiles for these users
+            # Only fetch profiles for users that appear in the filtered interactions
             user_ids_list = list(user_ids)
-            profiles_response = requests.get(
-                f"{base_url}/profiles_images?select=id,name,email,profile_photo,reference_image,video_ids",
-                headers=headers
-            )
-            profiles_response.raise_for_status()
-            profiles_data = profiles_response.json()
-
-            logger.info(f"Retrieved {len(profiles_data)} profiles")
+            if user_ids_list:
+                # Build query to fetch only the needed profiles
+                profiles_query = f"{base_url}/profiles_images?select=id,name,email,profile_photo,reference_image,video_ids"
+                # Use PostgREST's "in" filter to get only the profiles we need
+                user_ids_param = ",".join(user_ids_list)
+                profiles_query += f"&id=in.({user_ids_param})"
+                
+                profiles_response = requests.get(profiles_query, headers=headers)
+                profiles_response.raise_for_status()
+                profiles_data = profiles_response.json()
+                
+                logger.info(f"Retrieved {len(profiles_data)} profiles for {len(user_ids_list)} unique users")
+            else:
+                profiles_data = []
 
             # Create a lookup dictionary for profiles
             profiles_lookup = {profile['id']: profile for profile in profiles_data}
@@ -1457,10 +1439,16 @@ def fastapi_app():
 
             logger.info(f"Successfully enriched {len(enriched_interactions)} interactions with profile data")
 
-            return {
+            result = {
                 "total_interactions": len(enriched_interactions),
                 "interactions": enriched_interactions
             }
+            
+            # Add filter information to response
+            if user_id:
+                result["filtered_by_user"] = user_id
+                
+            return result
 
         except Exception as e:
             logger.error(f"Error fetching interactions: {str(e)}")
@@ -1504,6 +1492,7 @@ def main():
     print("  GET /profiles - List all profiles with face data")
     print("  POST /profile/{profile_id}/add-face-data - Add face encoding to profile")
     print("  GET /interactions/{user_id} - Get user interactions")
+    print("  GET /interactions?user_id={user_id} - Get interactions with profile details, optionally filtered by user")
     print("  GET /interactions - Get all interactions with profile details")
     print("  GET /health - Health check")
     print("  GET /test-base64 - Test base64 decoding functionality")
@@ -1523,3 +1512,5 @@ def main():
     print("    }'")
     print("")
     print("  curl {url}/interactions/user123")
+    print("  curl '{url}/interactions?user_id=user123'  # Get interactions for specific user with full profile details")
+    print("  curl {url}/interactions  # Get all interactions with full profile details")
