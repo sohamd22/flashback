@@ -36,6 +36,65 @@ interface DesktopIconData {
   position?: 'start' | 'end';
 }
 
+// Notifications management hook
+function useNotifications(profile: any) {
+  const [notifications, setNotifications] = useState(() => {
+    // Try to load read status from localStorage
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('photographic_notifications') : null;
+    const savedData = saved ? JSON.parse(saved) : {};
+    
+    return [
+      {
+        id: 1,
+        subject: "Welcome to Photographic!",
+        from: "Team Photographic",
+        preview: "Learn how to use your new photo memory platform...",
+        isRead: savedData['1'] || false,
+        content: `Welcome to Photographic!
+
+Hi ${profile?.name || 'there'}! We're excited to have you on board. 
+Here's how to get started with Photographic:
+
+> VIDEOS FOLDER
+  Double-click the Videos folder on your desktop to explore 
+  your uploaded photos and videos. You can view your memories, 
+  search through them, and even see transcriptions of your videos!
+
+> FRIENDS FOLDER  
+  Open the Friends folder to see your social network visualized 
+  as an interactive graph. Connect with friends who also appear 
+  in your photos and discover new connections!
+
+Questions? Just reply to this email - we're here to help!
+
+- Team Photographic`
+      }
+    ];
+  });
+
+  const markAsRead = (notificationId: number) => {
+    setNotifications(prev => {
+      const updated = prev.map(n => 
+        n.id === notificationId ? { ...n, isRead: true } : n
+      );
+      
+      // Save to localStorage
+      const readStatus = Object.fromEntries(
+        updated.map(n => [n.id.toString(), n.isRead])
+      );
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('photographic_notifications', JSON.stringify(readStatus));
+      }
+      
+      return updated;
+    });
+  };
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
+
+  return { notifications, markAsRead, unreadCount };
+}
+
 // Window management hook
 function useWindowManager() {
   const [windows, setWindows] = useState<WindowState[]>([]);
@@ -261,76 +320,23 @@ function ContactsApp({ width, height }: { width: number; height: number }) {
   );
 }
 
-function EmailApp({ width, height, windowManager }: { width: number; height: number; windowManager: any }) {
+function EmailApp({ width, height, windowManager, notifications, onMarkAsRead }: { 
+  width: number; 
+  height: number; 
+  windowManager: any;
+  notifications: any[];
+  onMarkAsRead: (id: number) => void;
+}) {
   const { profile } = useAuth();
-  
-  const notifications = [
-    {
-      id: 1,
-      subject: "Welcome to Photographic!",
-      from: "Team Photographic",
-      preview: "Learn how to use your new photo memory platform...",
-      isRead: false,
-      content: `Welcome to Photographic!
-
-Hi ${profile?.name || 'there'}! We're excited to have you on board. 
-Here's how to get started with Photographic:
-
-> VIDEOS FOLDER
-  Double-click the Videos folder on your desktop to explore 
-  your uploaded photos and videos. You can view your memories, 
-  search through them, and even see transcriptions of your videos!
-
-> FRIENDS FOLDER  
-  Open the Friends folder to see your social network visualized 
-  as an interactive graph. Connect with friends who also appear 
-  in your photos and discover new connections!
-
-Questions? Just reply to this email - we're here to help!
-
-- Team Photographic`
-    },
-    {
-      id: 2,
-      subject: "Friend Request from Sarah Johnson",
-      from: "sarah.johnson@email.com",
-      preview: "Sarah wants to connect with you on Photographic...",
-      isRead: false,
-      content: `New Friend Request
-
-From: Sarah Johnson
-Email: sarah.johnson@email.com
-
-Sarah would like to connect with you on Photographic. 
-You both appear in several photos together from your 
-recent vacation in Hawaii!
-
-[ ACCEPT REQUEST ] [ DECLINE ]
-
-Reply to this email to respond.`
-    },
-    {
-      id: 3,
-      subject: "Friend Request from Mike Chen",
-      from: "mike.chen@email.com", 
-      preview: "Mike wants to connect with you on Photographic...",
-      isRead: true,
-      content: `New Friend Request
-
-From: Mike Chen  
-Email: mike.chen@email.com
-
-Mike would like to connect with you on Photographic. 
-You both appear in photos from the tech conference 
-last month.
-
-[ ACCEPT REQUEST ] [ DECLINE ]
-
-Reply to this email to respond.`
-    }
-  ];
-
   const [selectedNotification, setSelectedNotification] = useState(notifications[0]);
+
+  // Mark notification as read when selected
+  const handleNotificationSelect = (notification: any) => {
+    setSelectedNotification(notification);
+    if (!notification.isRead) {
+      onMarkAsRead(notification.id);
+    }
+  };
 
   return (
     <div className="h-full bg-black flex border-2 border-gray-400" style={{ 
@@ -354,7 +360,7 @@ Reply to this email to respond.`
               className={`p-2 border-b border-gray-500 cursor-pointer hover:bg-gray-200 ${
                 selectedNotification.id === notification.id ? 'bg-blue-200' : 'bg-gray-300'
               }`}
-              onClick={() => setSelectedNotification(notification)}
+              onClick={() => handleNotificationSelect(notification)}
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="font-bold text-black text-xs truncate">
@@ -544,7 +550,7 @@ function EmailNotificationPopup({ unreadCount, onClose, onOpenMail }: {
 }) {
   return (
     <div 
-      className="fixed bottom-16 right-4 bg-gray-300 border-2 border-gray-800 shadow-lg z-50"
+      className="fixed top-8 right-4 bg-gray-300 border-2 border-gray-800 shadow-lg z-50"
       style={{ 
         fontFamily: 'Minecraft',
         imageRendering: 'pixelated',
@@ -623,37 +629,12 @@ export default function OSPage() {
   const [showEmailNotification, setShowEmailNotification] = useState(false);
   
   const windowManager = useWindowManager();
+  const { notifications, markAsRead, unreadCount } = useNotifications(profile);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  const notifications = [
-    {
-      id: 1,
-      subject: "Welcome to Photographic!",
-      from: "Team Photographic",
-      preview: "Learn how to use your new photo memory platform...",
-      isRead: false,
-    },
-    {
-      id: 2,
-      subject: "Friend Request from Sarah Johnson",
-      from: "sarah.johnson@email.com",
-      preview: "Sarah wants to connect with you on Photographic...",
-      isRead: false,
-    },
-    {
-      id: 3,
-      subject: "Friend Request from Mike Chen",
-      from: "mike.chen@email.com", 
-      preview: "Mike wants to connect with you on Photographic...",
-      isRead: true,
-    }
-  ];
-
-  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   // Show email notification when user logs in and has unread emails
   useEffect(() => {
@@ -695,13 +676,13 @@ export default function OSPage() {
       id: 'email',
       name: 'Mail',
       icon: "/icons/email.png",
-      badgeCount: unreadCount,
+      ...(unreadCount > 0 && { badgeCount: unreadCount }),
       onDoubleClick: () => {
         const windowWidth = typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200;
         const windowHeight = typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800;
         windowManager.openWindow(
           'Mail - Notifications',
-          <EmailApp width={windowWidth - 20} height={windowHeight - 60} windowManager={windowManager} />,
+          <EmailApp width={windowWidth - 20} height={windowHeight - 60} windowManager={windowManager} notifications={notifications} onMarkAsRead={markAsRead} />,
           "/icons/email.png"
         );
       }
@@ -779,7 +760,7 @@ export default function OSPage() {
             const windowHeight = typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800;
             windowManager.openWindow(
               'Mail - Notifications',
-              <EmailApp width={windowWidth - 20} height={windowHeight - 60} windowManager={windowManager} />,
+              <EmailApp width={windowWidth - 20} height={windowHeight - 60} windowManager={windowManager} notifications={notifications} onMarkAsRead={markAsRead} />,
               "/icons/email.png"
             );
           }}
