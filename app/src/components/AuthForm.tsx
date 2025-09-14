@@ -105,7 +105,7 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
               {/* Username/Email Field */}
               <div>
                 <label className="block text-xs text-gray-800 mb-1 font-bold">
-                  User name:
+                  Email:
                 </label>
                 <input
                   type="email"
@@ -164,12 +164,12 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
                 </div>
               )}
 
-              {/* Buttons */}
-              <div className="pt-4 flex justify-center gap-3">
+              {/* Main Button */}
+              <div className="pt-4 flex justify-center">
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="px-6 py-2 bg-gray-300 border-2 border-gray-600 text-black text-xs font-bold hover:bg-gray-200 focus:outline-none disabled:opacity-50 cursor-pointer"
+                  className="px-8 py-2 bg-gray-300 border-2 border-gray-600 text-black text-xs font-bold hover:bg-gray-200 focus:outline-none disabled:opacity-50 cursor-pointer"
                   style={{
                     boxShadow: isLoading ? 
                       'inset -1px -1px 0px rgba(255,255,255,0.8), inset 1px 1px 0px rgba(0,0,0,0.3)' :
@@ -178,10 +178,13 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
                 >
                   {isLoading ? 
                     (isSignup ? 'Creating...' : 'Logging On...') : 
-                    (isSignup ? 'OK' : 'OK')
+                    'OK'
                   }
                 </button>
+              </div>
 
+              {/* Secondary Action */}
+              <div className="pt-3 text-center">
                 <button
                   type="button"
                   onClick={() => {
@@ -190,13 +193,10 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
                     setPassword('');
                     setConfirmPassword('');
                   }}
-                  className="px-4 py-2 bg-gray-300 border-2 border-gray-600 text-black text-xs font-bold hover:bg-gray-200 focus:outline-none cursor-pointer"
-                  style={{
-                    boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
-                  }}
+                  className="text-xs text-blue-700 hover:text-blue-900 underline focus:outline-none cursor-pointer"
                   disabled={isLoading}
                 >
-                  {isSignup ? 'Sign In' : 'Sign Up'}
+                  {isSignup ? 'Already have an account? Log in instead' : 'Need an account? Create one'}
                 </button>
               </div>
             </form>

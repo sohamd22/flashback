@@ -88,7 +88,7 @@ export default function Taskbar({ windows, currentTime, onWindowClick, onLogout 
           fontFamily: 'monospace',
           borderLeft: '1px solid #666'
         }}>
-          {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {new Date().toLocaleDateString()} {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>
     </div>
