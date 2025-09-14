@@ -163,13 +163,16 @@ function ContactsApp({ width, height }: { width: number; height: number }) {
       try {
         setLoading(true);
         const response = await fetch('https://aryankeluskar--facial-recognition-api-fastapi-app.modal.run/interactions');
-        
+
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const data: APIInteraction[] = await response.json();
-        setInteractions(data);
+        const data = await response.json();
+        console.log(data);
+        // Ensure data is an array
+        const interactions = Array.isArray(data) ? data : [];
+        setInteractions(interactions);
         setError(null);
       } catch (err) {
         console.error('Failed to fetch interactions:', err);
@@ -221,9 +224,27 @@ function ContactsApp({ width, height }: { width: number; height: number }) {
     );
   }
 
-  // Use the first user in interactions as current user, or fallback to user ID 1
-  const currentUserId = interactions.length > 0 ? interactions[0].user1.id : 1;
-  const graphData = convertAPIDataToGraphData(interactions, currentUserId, width, height);
+  // Use the first user in interactions as current user, or create one from profile
+  const currentUserId = interactions.length > 0 ? interactions[0].user1.id : (profile?.id || 1);
+  const safeInteractions = Array.isArray(interactions) ? interactions : [];
+  
+  // If no interactions but we have a profile, create a minimal graph with just the user
+  let graphData;
+  if (safeInteractions.length === 0 && profile) {
+    graphData = {
+      nodes: [{
+        id: profile.id?.toString() || '1',
+        name: profile.name || 'User',
+        photo: profile.profile_photo || '/icons/user.png',
+        x: width / 2,
+        y: height / 2,
+        isUser: true
+      }],
+      connections: []
+    };
+  } else {
+    graphData = convertAPIDataToGraphData(safeInteractions, currentUserId, width, height);
+  }
   
   return (
     <div className="h-full bg-black">
