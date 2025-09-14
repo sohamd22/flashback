@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import OSLayout from './os/OSLayout';
 
 interface AuthFormProps {
   onSuccess?: () => void;
@@ -65,24 +66,11 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
   };
 
   return (
-    <div 
-      className="w-full h-screen bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 relative overflow-hidden select-none"
-      style={{
-        backgroundImage: `
-          radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.1) 1px, transparent 1px),
-          radial-gradient(circle at 75% 75%, rgba(255, 255, 255, 0.1) 1px, transparent 1px)
-        `,
-        backgroundSize: '64px 64px'
-      }}
+    <OSLayout
+      backgroundType="wallpaper"
+      showTopBar={false}
+      showTaskbar={true}
     >
-      {/* Top Bar */}
-      <div className="h-8 bg-gray-800 border-b-2 border-gray-600 flex items-center justify-between px-4">
-        <div className="flex items-center gap-2">
-          <div className="text-white font-bold text-sm">PhotoOS</div>
-        </div>
-      </div>
-
-      {/* Login Window */}
       <div className="flex items-center justify-center h-full">
         <div className="bg-gray-100 border-2 border-gray-600 shadow-2xl w-96">
           {/* Window Title Bar */}
@@ -91,7 +79,7 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
               {isSignup ? 'Create Account' : 'User Login'}
             </span>
             <div className="flex gap-1">
-              <div className="w-6 h-6 bg-red-400 border border-red-600 flex items-center justify-center text-xs font-bold">×</div>
+              <div className="w-6 h-6 bg-red-400 border border-red-600 flex items-center justify-center text-xs font-bold cursor-not-allowed opacity-75">×</div>
             </div>
           </div>
 
@@ -161,9 +149,10 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full px-4 py-2 bg-gray-300 border-2 border-gray-600 text-black font-bold hover:bg-gray-400 focus:outline-none transition-all duration-150 disabled:opacity-50"
+                  className="w-full px-4 py-2 bg-gray-300 border-2 border-gray-600 text-black font-bold hover:bg-gray-400 focus:outline-none transition-all duration-150 disabled:opacity-50 cursor-pointer relative z-10"
                   style={{
-                    boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
+                    boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)',
+                    pointerEvents: isLoading ? 'none' : 'auto'
                   }}
                 >
                   {isLoading ? (
@@ -184,7 +173,7 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
                     setPassword('');
                     setConfirmPassword('');
                   }}
-                  className="w-full mt-3 py-1.5 text-gray-600 text-sm underline hover:text-gray-800 focus:outline-none transition-all duration-150"
+                  className="w-full mt-3 py-1.5 text-gray-600 text-sm underline hover:text-gray-800 focus:outline-none transition-all duration-150 cursor-pointer relative z-10"
                   disabled={isLoading}
                 >
                   {isSignup ? 'Already have an account? Sign in' : 'No account? Sign up'}
@@ -200,14 +189,6 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
           </div>
         </div>
       </div>
-
-      {/* Bottom Taskbar */}
-      <div className="absolute bottom-0 left-0 right-0 h-12 bg-gray-800 border-t-2 border-gray-600 flex items-center justify-between px-4">
-        <div className="flex items-center gap-2"/>
-        <div className="text-white text-xs font-mono">
-          {new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </div>
-      </div>
-    </div>
+    </OSLayout>
   );
 }
