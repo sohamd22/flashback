@@ -4,7 +4,7 @@ import tempfile
 import os
 import subprocess
 import logging
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 import uuid
 from utils.constants import TEMP_DIR, SLIDING_WINDOW_SECONDS, CHUNK_DURATION_SECONDS
 
@@ -111,9 +111,12 @@ class VLMService:
         end_time: float,
         video_filename: str = "video",
         previous_descriptions: Optional[List[Tuple[int, float, float, str]]] = None,
+        current_transcription: Optional[str] = None,
+        previous_transcription: Optional[str] = None,
     ) -> str:
         """
         Generate natural language description of video chunk using Claude Vision
+        Enhanced with audio transcription context
         """
         try:
             keyframes = self.extract_keyframes(video_chunk_data)
@@ -127,13 +130,20 @@ class VLMService:
                     time {start_time:.1f}s to {end_time:.1f}s from file '{video_filename}').
             """
 
+            # Add audio transcription context
+            if current_transcription:
+                prompt_text += f"\n\nAudio transcription for this segment:\n\"{current_transcription}\""
+
+            if previous_transcription:
+                prompt_text += f"\n\nAudio from previous segment:\n\"{previous_transcription}\""
+
             # Add context from previous descriptions
             if previous_descriptions:
                 prompt_text += "\n\nContext from previous segments:\n"
                 for prev_idx, prev_start, prev_end, prev_desc in previous_descriptions:
                     prompt_text += f"\n- Segment {prev_idx} ({prev_start:.1f}s-{prev_end:.1f}s): {prev_desc}"
                 prompt_text += (
-                    "\n\nBased on the context above and the current keyframes, "
+                    "\n\nBased on the audio, context above and the current keyframes, "
                 )
             else:
                 prompt_text += "\n\n"
@@ -142,12 +152,14 @@ class VLMService:
                     1. Main subjects and activities
                     2. Scene setting and environment
                     3. Notable objects or text visible
-                    4. Any significant changes between frames
-                    5. Overall context and mood
-                    6. How this segment relates to or continues from previous segments (if applicable)
+                    4. Any dialogue or speech content (integrate naturally with visual description)
+                    5. How audio content relates to visual content
+                    6. Any significant changes between frames
+                    7. Overall context and mood
+                    8. How this segment relates to or continues from previous segments (if applicable)
 
                     Format your response as a single, searchable paragraph optimized for semantic search.
-                    Focus on concrete, observable details that would help someone find this segment."""
+                    Focus on concrete, observable details and spoken content that would help someone find this segment."""
 
             content = [
                 {
@@ -192,15 +204,22 @@ class VLMService:
         self,
         chunks: List[Tuple[str, bytes, int, float, float]],
         video_filename: str = "video",
+        transcriptions: Optional[List[Dict[str, Any]]] = None,
     ) -> List[str]:
         """
         Generate descriptions for multiple video chunks with sliding window context
+        Enhanced with transcription context
         Returns list of descriptions in same order as chunks
         """
         descriptions = []
         description_history = []  # List of (chunk_index, start_time, end_time, description_text)
+        previous_transcription = None
 
-        for chunk_id, chunk_data, chunk_index, start_time, end_time in chunks:
+        for i, (chunk_id, chunk_data, chunk_index, start_time, end_time) in enumerate(chunks):
+            # Get current transcription if available
+            current_transcription = None
+            if transcriptions and i < len(transcriptions):
+                current_transcription = transcriptions[i].get("text", "")
             # Calculate which previous descriptions to include based on sliding window
             relevant_context = []
 
@@ -223,7 +242,7 @@ class VLMService:
                     f"Processing chunk {chunk_index} with context from {len(relevant_context)} previous chunks"
                 )
 
-            # Generate description with context
+            # Generate description with context and transcription
             description = self.generate_description(
                 chunk_data,
                 chunk_index,
@@ -231,6 +250,8 @@ class VLMService:
                 end_time,
                 video_filename,
                 previous_descriptions=relevant_context if relevant_context else None,
+                current_transcription=current_transcription,
+                previous_transcription=previous_transcription,
             )
 
             # Extract just the description text (remove the prefix)
@@ -246,5 +267,8 @@ class VLMService:
 
             # Keep full formatted description for return
             descriptions.append(description)
+
+            # Update previous transcription for next iteration
+            previous_transcription = current_transcription
 
         return descriptions
