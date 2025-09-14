@@ -105,28 +105,74 @@ class ExampleMentraOSApp extends AppServer {
   }
 
   /**
-   * Cache a photo for display
+   * Cache a photo for display and send to video processing endpoint
    */
-  private async cachePhoto(photo: PhotoData, userId: string) {
+  private async cachePhoto(photo: PhotoData, _userId: string) {
+    // Hardcode user ID for testing
+    const hardcodedUserId = '432c3ab2-9b45-4fc0-9554-23df52f0962f';
+
     // create a new stored photo object which includes the photo data and the user id
     const cachedPhoto: StoredPhoto = {
       requestId: photo.requestId,
       buffer: photo.buffer,
       timestamp: photo.timestamp,
-      userId: userId,
+      userId: hardcodedUserId,
       mimeType: photo.mimeType,
       filename: photo.filename,
       size: photo.size
     };
 
-    // this example app simply stores the photo in memory for display in the webview, but you could also send the photo to an AI api,
-    // or store it in a database or cloud storage, send it to roboflow, or do other processing here
+    // Send photo to processing endpoint
+    this.sendToPhotoProcessing(cachedPhoto);
 
     // cache the photo for display
-    this.photos.set(userId, cachedPhoto);
+    this.photos.set(hardcodedUserId, cachedPhoto);
     // update the latest photo timestamp
-    this.latestPhotoTimestamp.set(userId, cachedPhoto.timestamp.getTime());
-    this.logger.info(`Photo cached for user ${userId}, timestamp: ${cachedPhoto.timestamp}`);
+    this.latestPhotoTimestamp.set(hardcodedUserId, cachedPhoto.timestamp.getTime());
+    this.logger.info(`Photo cached for user ${hardcodedUserId}, timestamp: ${cachedPhoto.timestamp}`);
+  }
+
+  /**
+   * Send photo to processing Modal endpoint
+   */
+  private async sendToPhotoProcessing(photo: StoredPhoto) {
+    try {
+      const MODAL_API_URL = 'https://jzflint--video-processing-api-fastapi-app.modal.run/process-photo';
+
+      // Create FormData
+      const formData = new FormData();
+      formData.append('user_id', photo.userId);
+
+      // Convert buffer to Blob and append as photo
+      const blob = new Blob([photo.buffer], { type: photo.mimeType || 'image/jpeg' });
+      formData.append('photo', blob, photo.filename || 'photo.jpg');
+
+      this.logger.info(`Sending photo to processing endpoint for user ${photo.userId}`);
+
+      // Send to Modal endpoint
+      const response = await fetch(MODAL_API_URL, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      const result = await response.json();
+      this.logger.info(`Photo processing response:`, result);
+
+      // Log the processing results
+      if (result.photo_id) {
+        this.logger.info(`Photo processed successfully with ID: ${result.photo_id}`);
+        this.logger.info(`Description: ${result.description}`);
+        this.logger.info(`Stored: ${result.stored}`);
+      }
+
+    } catch (error) {
+      this.logger.error(`Error sending to photo processing endpoint:`, error);
+    }
   }
 
 
@@ -138,7 +184,8 @@ class ExampleMentraOSApp extends AppServer {
 
     // API endpoint to get the latest photo for the authenticated user
     app.get('/api/latest-photo', (req: any, res: any) => {
-      const userId = (req as AuthenticatedRequest).authUserId;
+      // Use hardcoded user ID for now
+      const userId = '432c3ab2-9b45-4fc0-9554-23df52f0962f';
 
       if (!userId) {
         res.status(401).json({ error: 'Not authenticated' });
@@ -160,7 +207,8 @@ class ExampleMentraOSApp extends AppServer {
 
     // API endpoint to get photo data
     app.get('/api/photo/:requestId', (req: any, res: any) => {
-      const userId = (req as AuthenticatedRequest).authUserId;
+      // Use hardcoded user ID for testing
+      const userId = '432c3ab2-9b45-4fc0-9554-23df52f0962f';
       const requestId = req.params.requestId;
 
       if (!userId) {
@@ -183,7 +231,8 @@ class ExampleMentraOSApp extends AppServer {
 
     // Main webview route - displays the photo viewer interface
     app.get('/webview', async (req: any, res: any) => {
-      const userId = (req as AuthenticatedRequest).authUserId;
+      // Use hardcoded user ID for testing
+      const userId = 'test-user';
 
       if (!userId) {
         res.status(401).send(`
