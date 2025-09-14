@@ -1,0 +1,13 @@
+modal
+boto3
+requests
+fastapi
+python-multipart
+numpy
+opencv-python
+face-recognition
+supabase
+dlib
+uvicorn
+pytest
+pytest-asyncio
