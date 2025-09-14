@@ -19,7 +19,7 @@ export default function UserProfileWindow({
   width,
   height
 }: UserProfileWindowProps) {
-  const { listFavorites } = useVideoAPI();
+  const { listFavoritesId } = useVideoAPI();
   const [favoriteVideos, setFavoriteVideos] = useState<VideoClip[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +31,7 @@ export default function UserProfileWindow({
         setLoading(true);
         // For now, load the current user's favorites as demo data
         // In a real app, you'd fetch favorites for the specific userId
-        const favorites = await listFavorites();
+        const favorites = await listFavoritesId(userId);
         setFavoriteVideos(favorites.slice(0, 6)); // Show max 6 videos
         setError(null);
       } catch (err) {
@@ -44,7 +44,7 @@ export default function UserProfileWindow({
     };
 
     loadFavorites();
-  }, [userId, listFavorites]);
+  }, [userId, listFavoritesId]);
 
   return (
     <div className="h-full bg-gray-100 flex flex-col" style={{ fontFamily: 'Minecraft', fontSize: '12px' }}>
@@ -115,12 +115,51 @@ export default function UserProfileWindow({
                     }
                   }}
                 >
-                  <div className="aspect-video bg-gray-800 border border-gray-600 mb-2 flex items-center justify-center hover:bg-gray-700 transition-colors">
+                  <div className="aspect-video bg-gray-800 border border-gray-600 mb-2 flex items-center justify-center hover:bg-gray-700 transition-colors relative overflow-hidden">
                     {video.url ? (
-                      <div className="text-center">
-                        <div className="text-white text-2xl mb-1">🎬</div>
-                        <div className="text-white text-xs">Click to Play</div>
-                      </div>
+                      <>
+                        <video 
+                          src={video.video_url || video.url}
+                          className="w-full h-full object-cover pointer-events-none"
+                          style={{ imageRendering: 'pixelated' }}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          onError={(e) => {
+                            const target = e.target as HTMLVideoElement;
+                            target.style.display = 'none';
+                            const parent = target.parentElement;
+                            if (parent && !parent.querySelector('.fallback-content')) {
+                              const fallback = document.createElement('div');
+                              fallback.innerHTML = `
+                                <div class="text-center">
+                                  <div class="text-white text-2xl mb-1">🎬</div>
+                                  <div class="text-white text-xs">Click to Play</div>
+                                </div>
+                              `;
+                              fallback.className = 'fallback-content flex items-center justify-center w-full h-full';
+                              parent.appendChild(fallback);
+                            }
+                          }}
+                          onLoadedMetadata={(e) => {
+                            const target = e.target as HTMLVideoElement;
+                            const parent = target.parentElement;
+                            const existingFallback = parent?.querySelector('.fallback-content');
+                            if (existingFallback) {
+                              existingFallback.remove();
+                            }
+                            target.style.display = 'block';
+                            target.currentTime = Math.min(1, target.duration * 0.1);
+                          }}
+                          onSeeked={(e) => {
+                            const target = e.target as HTMLVideoElement;
+                            target.style.display = 'block';
+                          }}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
+                          <div className="text-white text-lg drop-shadow-lg">▶️</div>
+                        </div>
+                      </>
                     ) : (
                       <div className="text-center">
                         <div className="text-red-400 text-2xl mb-1">❌</div>
@@ -173,7 +212,7 @@ export default function UserProfileWindow({
       {/* Video player modal */}
       {selectedVideo && selectedVideo.url && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          className="fixed inset-0 flex items-center justify-center z-50"
           onClick={() => setSelectedVideo(null)}
         >
           <div onClick={(e) => e.stopPropagation()}>

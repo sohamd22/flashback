@@ -153,6 +153,31 @@ export const useVideoAPI = () => {
     }
   }, [profile?.id]);
 
+  const listFavoritesId = useCallback(async (id: string): Promise<VideoClip[]> => {
+    if (!id)  throw new Error('User not provided');
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch(`/api/favorites/list?userId=${id}`);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to load favorites');
+      }
+
+      const data = await response.json();
+      return data.favorites || [];
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to load favorites';
+      setError(errorMsg);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const addToFavorites = useCallback(async (chunkId: string, videoId: string, videoUrl: string, query?: string, score?: number) => {
     if (!profile?.id) throw new Error('User not authenticated');
     
@@ -267,6 +292,7 @@ export const useVideoAPI = () => {
     listAllVideos,
     listFavorites,
     addToFavorites,
+    listFavoritesId,
     removeFromFavorites,
     checkFavorites,
   };
