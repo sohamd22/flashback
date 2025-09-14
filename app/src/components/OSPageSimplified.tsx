@@ -30,10 +30,9 @@ interface DesktopIconData {
   id: string;
   name: string;
   icon: string;
-  x: number;
-  y: number;
   onDoubleClick: () => void;
   badgeCount?: number;
+  position?: 'start' | 'end';
 }
 
 // Window management hook
@@ -247,7 +246,7 @@ Reply to this email to respond.`
 
   return (
     <div className="h-full bg-black flex border-2 border-gray-400" style={{ 
-      fontFamily: 'Pixelify Sans', 
+      fontFamily: 'Minecraft', 
       imageRendering: 'pixelated',
       fontSize: '12px'
     }}>
@@ -301,7 +300,7 @@ Reply to this email to respond.`
         
         <div className="flex-1 p-3 overflow-y-auto bg-white">
           <pre className="whitespace-pre-wrap text-black text-xs leading-relaxed" style={{ 
-            fontFamily: 'Pixelify Sans',
+            fontFamily: 'Minecraft',
             imageRendering: 'pixelated'
           }}>
             {selectedNotification.content}
@@ -362,8 +361,6 @@ export default function OSPage() {
       id: 'personal',
       name: 'Personal',
       icon: "/icons/folder.png",
-      x: 32,
-      y: 32,
       onDoubleClick: () => {
         const windowWidth = typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200;
         const windowHeight = typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800;
@@ -378,8 +375,6 @@ export default function OSPage() {
       id: 'contacts',
       name: 'Contacts',
       icon: "/icons/contacts.png",
-      x: 32,
-      y: 140,
       onDoubleClick: () => {
         const windowWidth = typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200;
         const windowHeight = typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800;
@@ -394,8 +389,6 @@ export default function OSPage() {
       id: 'email',
       name: 'Mail',
       icon: "/icons/email.png",
-      x: 32,
-      y: 248,
       badgeCount: unreadCount,
       onDoubleClick: () => {
         const windowWidth = typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200;
@@ -411,8 +404,7 @@ export default function OSPage() {
       id: 'trash',
       name: 'Trash',
       icon: "/icons/trash.png",
-      x: 1366,
-      y: 748,
+      position: 'end',
       onDoubleClick: () => {
         const windowWidth = typeof window !== 'undefined' ? Math.min(1200, window.innerWidth - 100) : 1200;
         const windowHeight = typeof window !== 'undefined' ? Math.min(800, window.innerHeight - 120) : 800;
@@ -425,34 +417,49 @@ export default function OSPage() {
     }
   ];
 
+  const regularIcons = desktopIcons.filter(icon => icon.position !== 'end');
+  const specialIcons = desktopIcons.filter(icon => icon.position === 'end');
+
   return (
     <Desktop
       onMouseMove={windowManager.handleMouseMove}
       onMouseUp={windowManager.handleMouseUp}
     >
-      {/* Desktop Icons */}
-      {desktopIcons.map(icon => (
-        <DesktopIcon key={icon.id} {...icon} />
-      ))}
+      {/* Main content area */}
+      <div className="flex-1 flex relative">
+        {/* Left side icons grid */}
+        <div className="p-4 grid grid-cols-1 gap-4 content-start h-fit">
+          {regularIcons.map(icon => (
+            <DesktopIcon key={icon.id} {...icon} />
+          ))}
+        </div>
 
-      {/* Windows */}
-      {windowManager.windows.map(window => (
-        <Window
-          key={window.id}
-          id={window.id}
-          title={window.title}
-          icon={window.icon}
-          x={window.x}
-          y={window.y}
-          width={window.width}
-          height={window.height}
-          zIndex={window.zIndex}
-          onMouseDown={(e) => windowManager.handleMouseDown(e, window.id)}
-          onClose={() => windowManager.closeWindow(window.id)}
-        >
-          {window.content}
-        </Window>
-      ))}
+        {/* Right side icons (like trash) */}
+        <div className="absolute bottom-4 right-4 grid gap-4">
+          {specialIcons.map(icon => (
+            <DesktopIcon key={icon.id} {...icon} />
+          ))}
+        </div>
+
+        {/* Windows */}
+        {windowManager.windows.map(window => (
+          <Window
+            key={window.id}
+            id={window.id}
+            title={window.title}
+            icon={window.icon}
+            x={window.x}
+            y={window.y}
+            width={window.width}
+            height={window.height}
+            zIndex={window.zIndex}
+            onMouseDown={(e) => windowManager.handleMouseDown(e, window.id)}
+            onClose={() => windowManager.closeWindow(window.id)}
+          >
+            {window.content}
+          </Window>
+        ))}
+      </div>
 
       {/* Taskbar */}
       <Taskbar

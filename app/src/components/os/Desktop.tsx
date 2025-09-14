@@ -11,7 +11,7 @@ interface DesktopProps {
 export default function Desktop({ children, onMouseMove, onMouseUp }: DesktopProps) {
   return (
     <div
-      className="w-full h-screen relative overflow-hidden select-none"
+      className="w-full h-screen relative overflow-hidden select-none flex flex-col"
       style={{
         backgroundImage: `url('/backgrounds/wallpaper.jpg')`,
         backgroundSize: '100% 100%',

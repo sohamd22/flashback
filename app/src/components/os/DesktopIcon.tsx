@@ -4,20 +4,17 @@ interface DesktopIconProps {
   id: string;
   name: string;
   icon: string;
-  x: number;
-  y: number;
   onDoubleClick: () => void;
   badgeCount?: number;
+  position?: 'start' | 'end'; // For special positioning like trash
 }
 
-export default function DesktopIcon({ id, name, icon, x, y, onDoubleClick, badgeCount }: DesktopIconProps) {
+export default function DesktopIcon({ id, name, icon, onDoubleClick, badgeCount, position }: DesktopIconProps) {
   return (
     <div
       key={id}
-      className="absolute cursor-pointer hover:bg-gray-800/40 hover:border-2 hover:border-white/60 p-2 transition-all duration-150"
+      className="cursor-pointer hover:bg-gray-800/40 hover:border-2 hover:border-white/60 p-2 transition-all duration-150 flex flex-col items-center"
       style={{ 
-        left: x, 
-        top: y,
         border: '2px solid transparent',
         imageRendering: 'pixelated',
         width: '100px'
@@ -36,7 +33,7 @@ export default function DesktopIcon({ id, name, icon, x, y, onDoubleClick, badge
                 minWidth: '20px',
                 height: '20px',
                 fontSize: '10px',
-                fontFamily: 'Pixelify Sans',
+                fontFamily: 'Minecraft',
                 imageRendering: 'pixelated'
               }}
             >
