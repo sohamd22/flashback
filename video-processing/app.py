@@ -16,7 +16,9 @@ from models.schemas import (
     ProcessPhotoResponse,
     RetrieveClipsRequest,
     RetrieveClipsResponse,
+    RetrieveClipsWithDescriptionsResponse,
     ClipWithUrl,
+    ClipWithDescription,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -295,6 +297,52 @@ def fastapi_app():
 
         except Exception as e:
             logger.error(f"Error retrieving clips: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @web_app.post("/retrieve-clips-with-descriptions", response_model=RetrieveClipsWithDescriptionsResponse)
+    async def retrieve_clips_with_descriptions(request: RetrieveClipsRequest):
+        """Retrieve relevant clips for a query with presigned URLs and detailed descriptions"""
+        try:
+            # Query Pinecone for relevant clips with descriptions
+            clips = vector_db_service.query_clips_with_descriptions(
+                query_text=request.query, user_id=request.user_id, top_k=request.top_k
+            )
+
+            # Generate presigned URLs for each clip
+            clips_with_urls_and_descriptions = []
+            for clip in clips:
+                # Reconstruct GCS path from metadata
+                logger.info(
+                    f"Getting chunk path for clip {clip['chunk_id'], clip['video_id'], request.user_id}"
+                )
+                gcs_path = storage_service.get_chunk_path(
+                    user_id=request.user_id,
+                    video_id=clip["video_id"],
+                    chunk_id=clip["chunk_id"],
+                )
+
+                url, expires_at = storage_service.generate_presigned_url(gcs_path)
+
+                clips_with_urls_and_descriptions.append(
+                    ClipWithDescription(
+                        chunk_id=clip["chunk_id"],
+                        score=clip["score"],
+                        user_id=clip["user_id"],
+                        video_id=clip["video_id"],
+                        description=clip["description"],
+                        url=url,
+                        expires_at=expires_at,
+                    )
+                )
+
+            return RetrieveClipsWithDescriptionsResponse(
+                user_id=request.user_id,
+                query=request.query,
+                clips=clips_with_urls_and_descriptions
+            )
+
+        except Exception as e:
+            logger.error(f"Error retrieving clips with descriptions: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
     @web_app.get("/health")

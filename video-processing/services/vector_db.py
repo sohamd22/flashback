@@ -15,7 +15,12 @@ class VectorDBService:
 
     def upsert_video_chunk(self, chunk_id: str, user_id: str, video_id: str, text: str):
         """Store video chunk with text embedding in Pinecone"""
-        metadata = {"user_id": user_id, "video_id": video_id, "chunk_id": chunk_id}
+        metadata = {
+            "user_id": user_id,
+            "video_id": video_id,
+            "chunk_id": chunk_id,
+            "description": text  # Store the description text for retrieval
+        }
 
         try:
             self.index.upsert_records(
@@ -67,6 +72,43 @@ class VectorDBService:
             return clips
         except Exception as e:
             logger.error(f"Failed to query clips: {str(e)}")
+            raise
+
+    def query_clips_with_descriptions(
+        self, query_text: str, user_id: str, top_k: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Query for relevant video clips with their descriptions"""
+        try:
+            embed_response = self.pc.inference.embed(
+                model="llama-text-embed-v2",
+                inputs=[{"text": query_text}],
+                parameters={"input_type": "query"},
+            )
+            vector = embed_response.data[0].values
+            results = self.index.query(
+                vector=vector,
+                top_k=top_k,
+                namespace=user_id,
+                include_metadata=True,
+            )
+
+            clips = []
+            for match in results.matches:
+                metadata = json.loads(match.metadata.get("metadata"))
+                clips.append(
+                    {
+                        "chunk_id": match.id,
+                        "score": match.score,
+                        "user_id": metadata.get("user_id"),
+                        "video_id": metadata.get("video_id"),
+                        "description": metadata.get("description", "No description available"),
+                    }
+                )
+
+            logger.info(f"Found {len(clips)} clips with descriptions for query: {query_text}")
+            return clips
+        except Exception as e:
+            logger.error(f"Failed to query clips with descriptions: {str(e)}")
             raise
 
     def get_chunk_metadata(self, chunk_id: str, user_id: str) -> Dict[str, Any]:
