@@ -80,9 +80,6 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
         <div className="flex items-center gap-2">
           <div className="text-white font-bold text-sm">PhotoOS</div>
         </div>
-        <div className="text-white text-sm font-mono">
-          {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </div>
       </div>
 
       {/* Login Window */}
@@ -160,11 +157,11 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
                 </div>
               )}
 
-              <div className="flex gap-2 pt-4">
+              <div className="pt-4">
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="flex-1 px-4 py-2 bg-gray-300 border-2 border-gray-600 text-black font-bold hover:bg-gray-400 focus:outline-none transition-all duration-150 disabled:opacity-50"
+                  className="w-full px-4 py-2 bg-gray-300 border-2 border-gray-600 text-black font-bold hover:bg-gray-400 focus:outline-none transition-all duration-150 disabled:opacity-50"
                   style={{
                     boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
                   }}
@@ -187,10 +184,7 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
                     setPassword('');
                     setConfirmPassword('');
                   }}
-                  className="px-4 py-2 bg-gray-300 border-2 border-gray-600 text-black font-bold hover:bg-gray-400 focus:outline-none transition-all duration-150"
-                  style={{
-                    boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.8)'
-                  }}
+                  className="w-full mt-3 py-1.5 text-gray-600 text-sm underline hover:text-gray-800 focus:outline-none transition-all duration-150"
                   disabled={isLoading}
                 >
                   {isSignup ? 'Already have an account? Sign in' : 'No account? Sign up'}
@@ -209,11 +203,7 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
 
       {/* Bottom Taskbar */}
       <div className="absolute bottom-0 left-0 right-0 h-12 bg-gray-800 border-t-2 border-gray-600 flex items-center justify-between px-4">
-        <div className="flex items-center gap-2">
-          <button className="px-3 py-1 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-bold text-sm rounded hover:from-blue-600 hover:to-purple-700 transition-all">
-            Start
-          </button>
-        </div>
+        <div className="flex items-center gap-2"/>
         <div className="text-white text-xs font-mono">
           {new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </div>
