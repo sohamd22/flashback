@@ -10,6 +10,7 @@ import uuid
 import requests
 import pickle
 import base64
+import re
 from typing import List, Optional, Dict, Tuple, BinaryIO, Any
 from datetime import datetime
 from collections import defaultdict
@@ -23,10 +24,130 @@ from supabase import create_client, Client
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------
+# Utilities
+# ---------------------------------------------
+def decode_image_base64_str(image_str: str) -> bytes:
+    """Decode a base64 image string into raw bytes.
+
+    Supports plain base64 strings and data URLs (e.g. "data:image/jpeg;base64,...").
+    Strips whitespace/newlines, fixes missing padding, and raises ValueError on failure.
+    """
+    if not image_str or not isinstance(image_str, str):
+        raise ValueError("image_data must be a non-empty base64 string")
+
+    original_length = len(image_str)
+    logger.info(f"Starting base64 decode for string of length {original_length}")
+
+    # Remove data URL prefix if present
+    if image_str.startswith("data:image/"):
+        try:
+            image_str = image_str.split(",", 1)[1]
+            logger.info(f"Removed data URL prefix, new length: {len(image_str)}")
+        except Exception:
+            raise ValueError("Invalid data URL format for image_data")
+
+    # Remove whitespace/newlines and any other non-base64 characters
+    # Valid base64 characters are A-Z, a-z, 0-9, +, /, and = for padding
+    clean_str = re.sub(r'[^A-Za-z0-9+/=]', '', image_str)
+    logger.info(f"After cleaning invalid characters, length: {len(clean_str)} (removed {len(image_str) - len(clean_str)} chars)")
+
+    # Remove any existing padding first
+    clean_str = clean_str.rstrip('=')
+    logger.info(f"After removing existing padding, length: {len(clean_str)}")
+    
+    # Fix padding if necessary (base64 length must be multiple of 4)
+    padding_needed = (-len(clean_str)) % 4
+    if padding_needed:
+        clean_str += "=" * padding_needed
+        logger.info(f"Added {padding_needed} padding characters, final length: {len(clean_str)}")
+
+    try:
+        decoded = base64.b64decode(clean_str, validate=True)
+        logger.info(f"Successfully decoded base64 string to {len(decoded)} bytes")
+    except Exception as e:
+        logger.error(f"Standard b64decode failed: {str(e)}")
+        # Fallback to urlsafe decoding if regular fails
+        try:
+            decoded = base64.urlsafe_b64decode(clean_str)
+            logger.info(f"Successfully decoded with urlsafe_b64decode to {len(decoded)} bytes")
+        except Exception as e2:
+            logger.error(f"urlsafe_b64decode also failed: {str(e2)}")
+            # Final fallback - try without validation
+            try:
+                decoded = base64.b64decode(clean_str, validate=False)
+                logger.info(f"Successfully decoded with validate=False to {len(decoded)} bytes")
+            except Exception as e3:
+                logger.error(f"All decode methods failed. Final error: {str(e3)}")
+                logger.error(f"String sample: {clean_str[:100]}...")
+                raise ValueError(f"Failed to decode base64 image_data after all attempts: {str(e3)}")
+
+    if not decoded:
+        raise ValueError("Decoded image_data is empty")
+
+    return decoded
+
+def debug_base64_string(b64_str: str, profile_id: str = "unknown") -> Dict[str, Any]:
+    """Debug function to analyze a base64 string and return diagnostics"""
+    diagnostics = {
+        "profile_id": profile_id,
+        "original_length": len(b64_str),
+        "has_data_url_prefix": b64_str.startswith("data:image/"),
+        "starts_with": b64_str[:50] if len(b64_str) > 50 else b64_str,
+        "ends_with": b64_str[-50:] if len(b64_str) > 50 else b64_str,
+    }
+    
+    # Remove data URL prefix if present
+    work_str = b64_str
+    if work_str.startswith("data:image/"):
+        try:
+            work_str = work_str.split(",", 1)[1]
+            diagnostics["after_prefix_removal"] = len(work_str)
+        except:
+            diagnostics["prefix_removal_error"] = True
+            return diagnostics
+    
+    # Count valid vs invalid characters
+    valid_chars = len(re.findall(r'[A-Za-z0-9+/=]', work_str))
+    invalid_chars = len(work_str) - valid_chars
+    diagnostics["valid_chars"] = valid_chars
+    diagnostics["invalid_chars"] = invalid_chars
+    
+    # Check character distribution
+    char_counts = {}
+    for char in set(work_str):
+        if char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=":
+            char_counts[char] = work_str.count(char)
+    diagnostics["invalid_char_counts"] = char_counts
+    
+    # Check padding
+    diagnostics["ends_with_padding"] = work_str.endswith("=")
+    diagnostics["padding_count"] = len(work_str) - len(work_str.rstrip('='))
+    
+    return diagnostics
+
+def test_base64_decode() -> bool:
+    """Test function to validate base64 decoding functionality"""
+    try:
+        # Test with a simple base64 encoded string (a small 1x1 pixel JPEG)
+        test_b64 = "/9j/4AAQSkZJRgABAQAAAQABAAD//2Q=="  # 1x1 transparent JPEG
+        result = decode_image_base64_str(test_b64)
+        logger.info(f"Test decode successful: {len(result)} bytes")
+        
+        # Test with data URL prefix
+        test_data_url = "data:image/jpeg;base64," + test_b64
+        result2 = decode_image_base64_str(test_data_url)
+        logger.info(f"Test decode with data URL successful: {len(result2)} bytes")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Test decode failed: {str(e)}")
+        return False
+
 # Pydantic models (schemas)
 class ProfileInput(BaseModel):
     profile_id: str
-    image_url: Optional[str] = None  # Google Cloud Storage URL for reference image
+    image_data: str
     name: Optional[str] = None
 
 class AnalyzeVideoRequest(BaseModel):
@@ -74,12 +195,14 @@ class ListProfilesResponse(BaseModel):
     profiles_with_face_data: int
     profiles: List[ProfileSummary]
 
+class AddFaceDataRequest(BaseModel):
+    image_data: str
+
 # Data classes for internal processing
 @dataclass
 class ServiceProfileInput:
     profile_id: str
     image_data: Optional[bytes] = None
-    image_url: Optional[str] = None
     name: Optional[str] = None
 
 @dataclass
@@ -133,45 +256,80 @@ class SupabaseClient:
             if reference_image:
                 update_data["reference_image"] = reference_image
 
-            result = (
-                self.client.table("profiles_images")
-                .update(update_data)
-                .eq("id", profile_id)
-                .execute()
-            )
+            logger.info(f"Updating profile {profile_id} with face encoding using direct HTTP API...")
 
-            logger.info(f"Updated profile {profile_id} with face encoding")
-            return result.data[0] if result.data else {}
+            # Use direct HTTP call to avoid Supabase client issues
+            import requests
+            url = f"https://ndojkhkubndmfdgifnhy.supabase.co/rest/v1/profiles_images?id=eq.{profile_id}"
+            headers = {
+                "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kb2praGt1Ym5kbWZkZ2lmbmh5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Nzc5NzkyNiwiZXhwIjoyMDczMzczOTI2fQ.ham5FFwZThvvJM0aLzqgoUiCoT7h2bkOI3gmu5YBZtU",
+                "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kb2praGt1Ym5kbWZkZ2lmbmh5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Nzc5NzkyNiwiZXhwIjoyMDczMzczOTI2fQ.ham5FFwZThvvJM0aLzqgoUiCoT7h2bkOI3gmu5YBZtU",
+                "Content-Type": "application/json",
+                "Prefer": "return=representation"
+            }
+
+            response = requests.patch(url, json=update_data, headers=headers)
+            response.raise_for_status()
+
+            result_data = response.json()
+            logger.info(f"Successfully updated profile {profile_id} with face encoding")
+            logger.info(f"Update result: {result_data}")
+
+            return result_data[0] if result_data else {}
 
         except Exception as e:
             logger.error(f"Error updating profile face data: {str(e)}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
 
     def get_all_profiles_with_photos(self) -> List[Dict]:
         """Get all profiles that have profile photos"""
         try:
-            result = (
-                self.client.table("profiles_images")
-                .select("id, name, email, face_encoding, reference_image, video_ids, profile_photo")
-                .neq("profile_photo", None)
-                .execute()
-            )
+            logger.info("Fetching profiles with photos using direct HTTP API...")
 
+            # Use direct HTTP call since Supabase client queries are failing
+            import requests
+            url = "https://ndojkhkubndmfdgifnhy.supabase.co/rest/v1/profiles_images?select=id%2Cname%2Cemail%2Cface_encoding%2Cprofile_photo%2Creference_image%2Cvideo_ids&apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kb2praGt1Ym5kbWZkZ2lmbmh5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Nzc5NzkyNiwiZXhwIjoyMDczMzczOTI2fQ.ham5FFwZThvvJM0aLzqgoUiCoT7h2bkOI3gmu5YBZtU"
+
+            response = requests.get(url)
+            response.raise_for_status()
+            all_data = response.json()
+            logger.info(f"Direct fetch returned {len(all_data)} profiles")
+
+            # Filter for profiles with photos
+            filtered_profiles = [p for p in all_data if p.get('profile_photo')]
+            logger.info(f"Profiles with photos via direct fetch: {len(filtered_profiles)}")
+
+            # Log some sample data
+            for profile in filtered_profiles[:3]:
+                logger.info(f"Sample profile {profile.get('id')}: profile_photo={profile.get('profile_photo')[:100] if profile.get('profile_photo') else 'None'}...")
+
+            # Process the profiles
             profiles = []
-            for profile in result.data:
+            for profile in filtered_profiles:
+                logger.info(f"Processing profile {profile.get('id')}: has_face_encoding={bool(profile.get('face_encoding'))}, has_profile_photo={bool(profile.get('profile_photo'))}")
+
                 # If face encoding exists, deserialize it
                 if profile.get("face_encoding"):
-                    encoding_b64 = profile["face_encoding"]
-                    encoding_bytes = base64.b64decode(encoding_b64.encode('utf-8'))
-                    face_encoding = pickle.loads(encoding_bytes)
-                    profile["face_encoding"] = face_encoding
+                    try:
+                        encoding_b64 = profile["face_encoding"]
+                        encoding_bytes = base64.b64decode(encoding_b64.encode('utf-8'))
+                        face_encoding = pickle.loads(encoding_bytes)
+                        profile["face_encoding"] = face_encoding
+                        logger.info(f"Successfully deserialized face encoding for profile {profile.get('id')}")
+                    except Exception as e:
+                        logger.error(f"Failed to deserialize face encoding for profile {profile.get('id')}: {str(e)}")
+
                 profiles.append(profile)
 
-            logger.info(f"Retrieved {len(profiles)} profiles with photos")
+            logger.info(f"Retrieved {len(profiles)} profiles with photos via direct HTTP API")
             return profiles
 
         except Exception as e:
             logger.error(f"Error retrieving profiles with photos: {str(e)}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
 
     def get_profiles_by_ids(self, profile_ids: List[str]) -> List[Dict]:
@@ -713,17 +871,6 @@ class FacialRecognitionService:
         self.video_chunker = VideoChunker(chunk_duration_seconds=5)
         self.supabase_client = supabase_client
 
-    def download_image_from_url(self, image_url: str) -> bytes:
-        """Download image from Google Cloud Storage URL"""
-        try:
-            import requests
-            response = requests.get(image_url)
-            response.raise_for_status()
-            return response.content
-        except Exception as e:
-            logger.error(f"Failed to download image from {image_url}: {str(e)}")
-            raise
-
     def process_profile_inputs(
         self, profile_inputs: List[ServiceProfileInput]
     ) -> Dict[str, str]:  # profile_id -> status
@@ -735,9 +882,6 @@ class FacialRecognitionService:
                 # Handle both image data and image URLs
                 if hasattr(profile_input, 'image_data') and profile_input.image_data:
                     image_data = profile_input.image_data
-                elif hasattr(profile_input, 'image_url') and profile_input.image_url:
-                    # Image URL provided - download it
-                    image_data = self.download_image_from_url(profile_input.image_url)
                 else:
                     logger.error(f"Profile {profile_input.profile_id} has no image data or URL")
                     processing_results[profile_input.profile_id] = "error: no image data"
@@ -788,6 +932,10 @@ class FacialRecognitionService:
                 logger.info("Loading all profiles with photos")
                 profiles = self.supabase_client.get_all_profiles_with_photos()
 
+            logger.info(f"Loaded {len(profiles)} profiles from database")
+            for profile in profiles:
+                logger.info(f"Profile {profile.get('id')}: name={profile.get('name')}, has_face_encoding={bool(profile.get('face_encoding'))}, has_profile_photo={bool(profile.get('profile_photo'))}")
+
             # Generate face encodings for profiles that have photos but no encodings
             profile_encodings = {}
             for profile in profiles:
@@ -797,20 +945,43 @@ class FacialRecognitionService:
                     try:
                         # Generate face encoding from profile photo
                         logger.info(f"Generating face encoding for profile {profile['id']} from profile photo")
-                        image_data = self.download_image_from_url(profile["profile_photo"])
+
+                        profile_photo = profile["profile_photo"]
+                        
+                        # Remove data:image/jpeg;base64, prefix if present
+                        if profile_photo.startswith("data:image/jpeg;base64,"):
+                            profile_photo = profile_photo[len("data:image/jpeg;base64,"):]
+                            logger.info(f"Removed data:image/jpeg;base64, prefix from profile {profile['id']}")
+                        
+                        logger.info(f"Decoding base64 profile_photo for {profile['id']}...")
+                        image_data = decode_image_base64_str(profile_photo)
+                        logger.info(f"Decoded base64 for profile {profile['id']}, size: {len(image_data)} bytes")
+
                         face_encoding = self.face_processor.create_face_encoding_from_image(image_data)
+                        logger.info(f"Successfully created face encoding for profile {profile['id']}")
 
                         # Store the generated encoding in database
-                        self.supabase_client.upsert_profile_face_data(
+                        update_result = self.supabase_client.upsert_profile_face_data(
                             profile_id=profile["id"],
                             face_encoding=face_encoding
                         )
+                        logger.info(f"Database update result for profile {profile['id']}: {update_result}")
 
                         profile_encodings[profile["id"]] = face_encoding
                         profile["face_encoding"] = face_encoding
+                        logger.info(f"Added face encoding to profile_encodings for {profile['id']}")
 
                     except Exception as e:
-                        logger.warning(f"Failed to generate face encoding for profile {profile['id']}: {str(e)}")
+                        logger.error(f"Failed to generate face encoding for profile {profile['id']}: {str(e)}")
+                        logger.error(f"Profile photo starts with: {profile_photo[:50] if profile_photo else 'None'}...")
+                        
+                        # Add detailed base64 debugging
+                        if profile_photo:
+                            debug_info = debug_base64_string(profile_photo, profile['id'])
+                            logger.error(f"Base64 debug info for profile {profile['id']}: {debug_info}")
+                        
+                        import traceback
+                        logger.error(f"Full traceback: {traceback.format_exc()}")
                         continue
             profile_info = {
                 profile["id"]: profile for profile in profiles
@@ -1136,13 +1307,12 @@ def fastapi_app():
             raise HTTPException(status_code=500, detail=str(e))
 
     @web_app.post("/profile/{profile_id}/add-face-data")
-    async def add_face_data_to_profile(profile_id: str, image_url: str):
-        """Add face encoding to a profile from a reference image URL"""
+    async def add_face_data_to_profile(profile_id: str, request: AddFaceDataRequest):
+        """Add face encoding to a profile from base64 image data"""
         try:
-            profile_input = ServiceProfileInput(
-                profile_id=profile_id,
-                image_url=image_url
-            )
+            # Decode base64 image data into bytes
+            image_bytes = decode_image_base64_str(request.image_data)
+            profile_input = ServiceProfileInput(profile_id=profile_id, image_data=image_bytes)
 
             result = facial_recognition_service.process_profile_inputs([profile_input])
 
@@ -1180,6 +1350,21 @@ def fastapi_app():
             "service": "facial-recognition-api",
             "version": "1.0.0",
         }
+    
+    @web_app.get("/test-base64")
+    async def test_base64_endpoint():
+        """Test endpoint to validate base64 decoding functionality"""
+        try:
+            success = test_base64_decode()
+            return {
+                "test_result": "success" if success else "failed",
+                "message": "Base64 decoding test completed"
+            }
+        except Exception as e:
+            return {
+                "test_result": "failed",
+                "error": str(e)
+            }
 
     return web_app
 
@@ -1194,6 +1379,7 @@ def main():
     print("  POST /profile/{profile_id}/add-face-data - Add face encoding to profile")
     print("  GET /interactions/{user_id} - Get user interactions")
     print("  GET /health - Health check")
+    print("  GET /test-base64 - Test base64 decoding functionality")
     print("\nExample usage:")
     print("  curl -X POST {url}/analyze-video \\")
     print("    -H 'Content-Type: application/json' \\")
@@ -1206,7 +1392,7 @@ def main():
     print("  curl -X POST {url}/profile/profile123/add-face-data \\")
     print("    -H 'Content-Type: application/json' \\")
     print("    -d '{")
-    print("      \"image_url\": \"https://storage.googleapis.com/bucket/reference.jpg\"")
+    print("      \"image_data\": \"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ...\"")
     print("    }'")
     print("")
     print("  curl {url}/interactions/user123")

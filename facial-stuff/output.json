@@ -1,1 +1,0 @@
-{"detail":"{'message': '\"failed to parse filter (is.not.null)\" (line 1, column 7)', 'code': 'PGRST100', 'hint': None, 'details': 'unexpected \".\" expecting isVal: (null, not_null, true, false, unknown)'}"}
