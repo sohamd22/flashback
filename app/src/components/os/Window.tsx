@@ -50,7 +50,7 @@ export default function Window({
       />
       
       <div 
-        className="overflow-hidden bg-white border-2 border-gray-600" 
+        className="overflow-hidden bg-white border-2 border-gray-600 relative" 
         style={{ 
           height: `${height - 40}px`,
           boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.2)'

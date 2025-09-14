@@ -15,7 +15,7 @@ export default function Desktop({ children, onMouseMove, onMouseUp }: DesktopPro
       style={{
         backgroundImage: `url('/backgrounds/wallpaper.jpg')`,
         backgroundSize: '100% 100%',
-        backgroundPosition: '0 0'
+        backgroundPosition: '0 0',
       }}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
