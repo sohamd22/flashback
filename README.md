@@ -12,6 +12,9 @@ We've successfully built a privacy-first social platform that captures what matt
 
 ## Technical Overview
 
+<img width="10494" height="5049" alt="image" src="https://github.com/user-attachments/assets/3d22ad86-2530-42f6-ab8b-f748d6404599" />
+
+
 ### Architecture & Stack
 
 **Frontend**: Next.js application with React for the web interface, featuring interactive graph visualizations of user relationships and memory timelines.
